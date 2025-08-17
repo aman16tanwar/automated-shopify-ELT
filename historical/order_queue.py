@@ -40,11 +40,20 @@ def run_order_insights(config):
         config (dict): Configuration dictionary containing GCP_PROJECT_ID, BIGQUERY_DATASET,
             BIGQUERY_TABLE_ORDER_INSIGHTS, MERCHANT, and TOKEN.
     """
-    # Setup authentication - use absolute path
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    creds_path = os.path.join(script_dir, "bigquery.json")
-    credentials = service_account.Credentials.from_service_account_file(creds_path)
-    pandas_gbq.context.credentials = credentials
+    # Use Application Default Credentials in Cloud Run
+    if os.getenv("K_SERVICE"):  # This env var is set in Cloud Run
+        # Running in Cloud Run - use default credentials
+        credentials = None
+    else:
+        # Running locally - use service account file if it exists
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        creds_path = os.path.join(script_dir, "bigquery.json")
+        if os.path.exists(creds_path):
+            credentials = service_account.Credentials.from_service_account_file(creds_path)
+            pandas_gbq.context.credentials = credentials
+        else:
+            credentials = None
+    
     pandas_gbq.context.project = config["GCP_PROJECT_ID"]
 
     table_id = f"{config['GCP_PROJECT_ID']}.{config['BIGQUERY_DATASET']}.{config['BIGQUERY_TABLE_ORDER_INSIGHTS']}"

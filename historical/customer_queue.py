@@ -9,11 +9,20 @@ import shopify
 
 
 def run_customer_insights(config):
-    # Use absolute path for credentials
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    creds_path = os.path.join(script_dir, "bigquery.json")
-    credentials = service_account.Credentials.from_service_account_file(creds_path)
-    pandas_gbq.context.credentials = credentials
+    # Use Application Default Credentials in Cloud Run
+    if os.getenv("K_SERVICE"):  # This env var is set in Cloud Run
+        # Running in Cloud Run - use default credentials
+        credentials = None
+    else:
+        # Running locally - use service account file if it exists
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        creds_path = os.path.join(script_dir, "bigquery.json")
+        if os.path.exists(creds_path):
+            credentials = service_account.Credentials.from_service_account_file(creds_path)
+            pandas_gbq.context.credentials = credentials
+        else:
+            credentials = None
+    
     pandas_gbq.context.project = config["GCP_PROJECT_ID"]
 
     api_session = shopify.Session(config["MERCHANT"], '2025-01', config["TOKEN"])

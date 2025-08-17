@@ -15,11 +15,20 @@ from job_logger import JobLogger
 
 # Load env and credentials
 load_dotenv()
-# Use absolute path for credentials
-script_dir = os.path.dirname(os.path.abspath(__file__))
-creds_path = os.path.join(script_dir, "bigquery.json")
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
-credentials = service_account.Credentials.from_service_account_file(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+
+# Use Application Default Credentials in Cloud Run
+if os.getenv("K_SERVICE"):  # This env var is set in Cloud Run
+    # Running in Cloud Run - use default credentials
+    credentials = None  # Will use Application Default Credentials
+else:
+    # Running locally - use service account file if it exists
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    creds_path = os.path.join(script_dir, "bigquery.json")
+    if os.path.exists(creds_path):
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
+        credentials = service_account.Credentials.from_service_account_file(creds_path)
+    else:
+        credentials = None  # Will use Application Default Credentials
 
 # Initialize job logger
 logger = JobLogger()
