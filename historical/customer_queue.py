@@ -202,10 +202,26 @@ def run_customer_insights(config):
             df[col] = df[col].fillna(0)
     
     try:
+        # Try to identify data type issues before upload
+        print("[DEBUG] Checking for data type issues...")
+        
+        # Ensure all object columns are strings
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = df[col].fillna('').astype(str)
+        
+        # Ensure datetime columns are properly formatted
+        datetime_cols = df.select_dtypes(include=['datetime64']).columns
+        for col in datetime_cols:
+            # Ensure timezone awareness is handled
+            if df[col].dt.tz is None:
+                df[col] = pd.to_datetime(df[col], utc=True)
+        
         # Pass credentials only if not None (for local auth)
         gbq_kwargs = {"destination_table": table_id, "project_id": config['GCP_PROJECT_ID'], "if_exists": "replace"}
         if credentials is not None:
             gbq_kwargs["credentials"] = credentials
+        
+        print(f"[DEBUG] Starting upload to BigQuery table: {table_id}")
         to_gbq(df, **gbq_kwargs)
         print(f"[SUCCESS] Uploaded to BigQuery: {table_id} - {record_count} records")
     except Exception as e:
@@ -217,14 +233,22 @@ def run_customer_insights(config):
         # Try to identify the problematic column
         print("\n[DEBUG] Checking each column for issues...")
         for col in df.columns:
-            print(f"[DEBUG] Column '{col}': dtype={df[col].dtype}, nulls={df[col].isna().sum()}, unique={df[col].nunique()}")
-            if df[col].dtype == 'object':
-                # Check string lengths
-                max_len = df[col].astype(str).str.len().max()
-                print(f"  - Max string length: {max_len}")
-                # Check for any special characters
-                sample = df[col].dropna().head(3).tolist()
-                print(f"  - Sample values: {sample}")
+            try:
+                print(f"[DEBUG] Column '{col}': dtype={df[col].dtype}, nulls={df[col].isna().sum()}, unique={df[col].nunique()}")
+                if df[col].dtype == 'object':
+                    # Check string lengths
+                    max_len = df[col].astype(str).str.len().max()
+                    print(f"  - Max string length: {max_len}")
+                    # Check for any special characters
+                    try:
+                        sample = df[col].dropna().head(3).tolist()
+                        # Safely convert to string representation
+                        sample_str = repr(sample)[:200]  # Limit length
+                        print(f"  - Sample values: {sample_str}")
+                    except Exception as sample_err:
+                        print(f"  - Error getting sample: {type(sample_err).__name__}")
+            except Exception as col_err:
+                print(f"[ERROR] Failed to analyze column '{col}': {type(col_err).__name__}: {str(col_err)[:100]}")
         raise
     
     return record_count
