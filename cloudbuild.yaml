@@ -1,14 +1,17 @@
 steps:
-  # Build the container image
+  # Step 1: Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/shopify-pipeline:$COMMIT_SHA', '.']
     dir: 'onboarding'
+    id: 'build-image'
 
-  # Push the container image to Container Registry
+  # Step 2: Push to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/shopify-pipeline:$COMMIT_SHA']
+    id: 'push-image'
+    waitFor: ['build-image']
 
-  # Deploy container image to Cloud Run
+  # Step 3: Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -22,15 +25,45 @@ steps:
       - '--platform'
       - 'managed'
       - '--no-allow-unauthenticated'  # Private access only
+      - '--service-account'
+      - 'shopify-pipeline-sa@$PROJECT_ID.iam.gserviceaccount.com'
       - '--memory'
       - '2Gi'
+      - '--cpu'
+      - '2'
       - '--timeout'
       - '3600'
+      - '--concurrency'
+      - '1'  # Single user app
+      - '--min-instances'
+      - '0'  # Scale to zero when not used
+      - '--max-instances'
+      - '10'  # Single user, no need for multiple
       - '--set-env-vars'
-      - 'GCP_PROJECT_ID=$PROJECT_ID'
+      - 'GCP_PROJECT_ID=$PROJECT_ID,ENVIRONMENT=production'
+    id: 'deploy-service'
+    waitFor: ['push-image']
+
+  # Step 4: Grant you access to the private service
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'services'
+      - 'add-iam-policy-binding'
+      - 'shopify-pipeline'
+      - '--member'
+      - 'user:aman16tanwar@gmail.com'  
+      - '--role'
+      - 'roles/run.invoker'
+      - '--region'
+      - 'us-central1'
+    id: 'grant-access'
+    waitFor: ['deploy-service']
 
 images:
   - 'gcr.io/$PROJECT_ID/shopify-pipeline:$COMMIT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'  # Faster builds
