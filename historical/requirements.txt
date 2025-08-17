@@ -1,0 +1,7 @@
+shopifyapi
+pandas
+pandas-gbq
+google-cloud-bigquery
+google-auth
+google-cloud-core
+python-dotenv

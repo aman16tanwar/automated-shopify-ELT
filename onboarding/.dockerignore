@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Credentials (if any local)
+*.json
+.env
+.env.local
+
+# Logs
+*.log
+
+# Other
+README.md
+*.md
+.dockerignore
+Dockerfile

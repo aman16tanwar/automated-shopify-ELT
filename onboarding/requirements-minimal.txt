@@ -1,0 +1,6 @@
+# Minimal requirements for faster build
+streamlit
+pandas
+google-cloud-bigquery
+pandas-gbq
+python-dotenv

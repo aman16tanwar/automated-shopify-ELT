@@ -1,0 +1,53 @@
+# Credentials and secrets
+*.json
+store_config.json
+bigquery.json
+.env
+.env.*
+credentials/
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Local config
+configs/*.json
+!configs/example.json
+!configs/schema.json
+
+# Temporary files
+*.tmp
+*.bak
+*~

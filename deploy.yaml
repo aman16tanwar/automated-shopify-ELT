@@ -1,0 +1,59 @@
+# Cloud Build configuration for deploying the onboarding service
+steps:
+  # Build the onboarding API image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/shopify-onboarding-api', './onboarding']
+  
+  # Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/shopify-onboarding-api']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'shopify-onboarding-api'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/shopify-onboarding-api'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'  # Remove this for production
+      - '--memory'
+      - '1Gi'
+      - '--timeout'
+      - '300'
+      - '--set-env-vars'
+      - 'GCP_PROJECT_ID=$PROJECT_ID'
+
+# Optional: Deploy the web UI separately
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/shopify-onboarding-ui', '-f', './onboarding/Dockerfile.ui', './onboarding']
+    
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/shopify-onboarding-ui']
+    
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'shopify-onboarding-ui'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/shopify-onboarding-ui'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '512Mi'
+      - '--port'
+      - '8501'
+
+images:
+  - 'gcr.io/$PROJECT_ID/shopify-onboarding-api'
+  - 'gcr.io/$PROJECT_ID/shopify-onboarding-ui'
