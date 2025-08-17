@@ -5,7 +5,7 @@ steps:
     dir: 'onboarding'
     id: 'build-image'
 
-  # Step 2: Push to Container Artifact Registry 
+  # Step 2: Push to Container Registry 
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/shopify-pipeline:$COMMIT_SHA']
     id: 'push-image'
