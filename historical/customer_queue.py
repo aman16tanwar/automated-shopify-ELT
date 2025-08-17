@@ -184,8 +184,48 @@ def run_customer_insights(config):
     record_count = len(df)
 
     table_id = f"{config['GCP_PROJECT_ID']}.{config['BIGQUERY_DATASET']}.{config['BIGQUERY_TABLE_CUSTOMER_INSIGHTS']}"
-    to_gbq(df, destination_table=table_id, project_id=config['GCP_PROJECT_ID'], credentials=credentials, if_exists="replace")
-    print(f"[SUCCESS] Uploaded to BigQuery: {table_id} - {record_count} records")
+    
+    # Debug: Check data types before upload
+    print("[DEBUG] DataFrame info before upload:")
+    print(df.info())
+    print("\n[DEBUG] Sample data:")
+    print(df.head(2))
+    
+    # Check for any infinity or NaN values that might cause issues
+    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    for col in numeric_cols:
+        if df[col].isin([float('inf'), float('-inf')]).any():
+            print(f"[WARNING] Column '{col}' contains infinity values")
+            df[col] = df[col].replace([float('inf'), float('-inf')], 0)
+        if df[col].isna().any():
+            print(f"[WARNING] Column '{col}' contains NaN values")
+            df[col] = df[col].fillna(0)
+    
+    try:
+        # Pass credentials only if not None (for local auth)
+        gbq_kwargs = {"destination_table": table_id, "project_id": config['GCP_PROJECT_ID'], "if_exists": "replace"}
+        if credentials is not None:
+            gbq_kwargs["credentials"] = credentials
+        to_gbq(df, **gbq_kwargs)
+        print(f"[SUCCESS] Uploaded to BigQuery: {table_id} - {record_count} records")
+    except Exception as e:
+        print(f"[ERROR] Failed to upload to BigQuery: {str(e)}")
+        print(f"[ERROR] Full error: {type(e).__name__}")
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        
+        # Try to identify the problematic column
+        print("\n[DEBUG] Checking each column for issues...")
+        for col in df.columns:
+            print(f"[DEBUG] Column '{col}': dtype={df[col].dtype}, nulls={df[col].isna().sum()}, unique={df[col].nunique()}")
+            if df[col].dtype == 'object':
+                # Check string lengths
+                max_len = df[col].astype(str).str.len().max()
+                print(f"  - Max string length: {max_len}")
+                # Check for any special characters
+                sample = df[col].dropna().head(3).tolist()
+                print(f"  - Sample values: {sample}")
+        raise
     
     return record_count
 
