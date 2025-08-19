@@ -68,6 +68,8 @@ class JobManager:
             bigquery.SchemaField("message", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("store_url", "STRING", mode="NULLABLE"),
             bigquery.SchemaField("component", "STRING", mode="NULLABLE"),  # orders, customers, products
+            bigquery.SchemaField("is_error", "BOOLEAN", mode="NULLABLE"),  # Flag for errors
+            bigquery.SchemaField("error_type", "STRING", mode="NULLABLE"),  # Type of error
         ]
         
         logs_table = bigquery.Table(logs_table_id, schema=logs_schema)
@@ -249,6 +251,33 @@ class JobManager:
         
         return list(self.client.query(query, job_config=job_config))
     
+    def get_job_error_summary(self, job_id):
+        """Get error summary for a specific job"""
+        query = f"""
+        SELECT 
+            COUNT(CASE WHEN log_level = 'ERROR' THEN 1 END) as error_count,
+            COUNT(CASE WHEN log_level = 'WARNING' THEN 1 END) as warning_count,
+            ARRAY_AGG(
+                STRUCT(timestamp, message, component)
+                ORDER BY timestamp DESC
+                LIMIT 10
+            ) as recent_errors
+        FROM `{self.project_id}.{self.jobs_dataset}.{self.logs_table}`
+        WHERE job_id = @job_id
+        AND log_level IN ('ERROR', 'WARNING')
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("job_id", "STRING", job_id)
+            ]
+        )
+        
+        results = list(self.client.query(query, job_config=job_config))
+        if results:
+            return results[0]
+        return None
+    
     def get_recent_jobs(self, limit=20):
         """Get recent jobs with summary"""
         query = f"""
@@ -312,7 +341,7 @@ class JobManager:
                 
                 # Get historical script path
                 app_dir = os.path.dirname(os.path.abspath(__file__))
-                historical_script = os.path.join(os.path.dirname(app_dir), "historical", "main.py")
+                historical_script = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "main.py")
                 
                 # Create environment with job_id
                 env = os.environ.copy()

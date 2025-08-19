@@ -29,7 +29,7 @@ app_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Prefer ADC; if not set, fall back to project-local JSON for dev
 if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
-    credentials_path = os.path.join(os.path.dirname(app_dir), "historical", "bigquery.json")
+    credentials_path = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "bigquery.json")
     if os.path.exists(credentials_path):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 
@@ -233,7 +233,7 @@ def mask_token(tok: str) -> str:
     return tok[:10] + "*" * max(0, (len(tok) - 15)) + tok[-5:]
 
 def load_configs():
-    cfg_path = os.path.join(os.path.dirname(app_dir), "historical", "store_config.json")
+    cfg_path = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "store_config.json")
     if os.path.exists(cfg_path):
         with open(cfg_path, "r") as f:
             return json.load(f), cfg_path
@@ -614,7 +614,7 @@ with tab1:
                     # Fallback to synchronous processing if job manager not available
                     with st.spinner("Loading historical data... This may take 0.5–4 hours depending on data volume."):
                         try:
-                            historical_script = os.path.join(os.path.dirname(app_dir), "historical", "main.py")
+                            historical_script = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "main.py")
 
                             progress_bar = st.progress(0)
                             status_text = st.empty()
@@ -658,7 +658,14 @@ with tab1:
                                     progress_bar.progress(100)
                                     status_text.text("Completed!")
 
-                                output_container.code("\n".join(output_text[-12:]), language="text")
+                                # Show more logs with scrollable container
+                                log_display = "\n".join(output_text[-100:])  # Show last 100 lines instead of 12
+                                output_container.markdown(
+                                    f'<div style="background-color: #1e1e1e; color: #ffffff; padding: 1rem; '
+                                    f'border-radius: 8px; font-family: monospace; font-size: 0.85rem; '
+                                    f'height: 400px; overflow-y: auto; white-space: pre-wrap;">{log_display}</div>',
+                                    unsafe_allow_html=True
+                                )
 
                             process.wait()
 
@@ -1045,7 +1052,7 @@ if st.session_state.get("show_restart_historical"):
                 cfgs = upsert_config(cfgs, restart_cfg, key="MERCHANT")
                 save_configs(cfgs, cfg_path)
 
-                historical_script = os.path.join(os.path.dirname(app_dir), "historical", "main.py")
+                historical_script = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "main.py")
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -1108,7 +1115,28 @@ if st.session_state.get("show_restart_historical"):
 # Tab 3: Pipeline Jobs
 # -------------------------
 with tab3:
-    st.markdown("## 📈 Pipeline Jobs")
+    # Header with auto-refresh controls
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        st.markdown("## 📈 Pipeline Jobs")
+    with col2:
+        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh every 5 seconds")
+    with col3:
+        if st.button("🔄 Refresh Now"):
+            st.rerun()
+    
+    # Add auto-refresh JavaScript if enabled
+    if auto_refresh:
+        st.markdown(
+            """
+            <script>
+            setTimeout(function() {
+                window.location.reload();
+            }, 5000);
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
     
     # Show notification if redirected from historical load
     if st.session_state.get("show_pipeline_notification"):
@@ -1260,7 +1288,7 @@ with tab3:
                     # Adjust progress based on logs if available (for better accuracy)
                     if job.status == 'running':
                         # Try to get recent logs to determine actual progress
-                        recent_logs = job_manager.get_job_logs(job.job_id, limit=5)
+                        recent_logs = job_manager.get_job_logs(job.job_id, limit=20)
                         if recent_logs:
                             for log in recent_logs:
                                 if "[COMPLETED]" in log.message:
@@ -1361,12 +1389,24 @@ with tab3:
                     if st.session_state.get(f"show_logs_{job.job_id}", False):
                         with st.container():
                             st.markdown("##### 📋 Real-time Logs")
-                            logs = job_manager.get_job_logs(job.job_id, limit=50)
+                            logs = job_manager.get_job_logs(job.job_id, limit=500)  # Get more logs
                             if logs:
                                 # Create a scrollable log container
                                 log_html = '<div style="background-color: #1e1e1e; color: #ffffff; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.85rem; max-height: 300px; overflow-y: auto;">'
                                 
-                                for log in reversed(logs[-20:]):  # Show last 20 logs
+                                # Show more logs and track errors
+                                error_count = 0
+                                warning_count = 0
+                                for log in reversed(logs):  # Show all logs, container handles scrolling
+                                    # Check for errors in message content
+                                    is_error = any(term in log.message.upper() for term in ['ERROR', 'FAILED', 'EXCEPTION'])
+                                    is_warning = any(term in log.message.upper() for term in ['WARNING', 'WARN'])
+                                    
+                                    if is_error:
+                                        error_count += 1
+                                    elif is_warning:
+                                        warning_count += 1
+                                    
                                     level_color = {
                                         "ERROR": "#ff6b6b",
                                         "WARNING": "#ffd93d",
@@ -1379,11 +1419,27 @@ with tab3:
                                     else:
                                         timestamp = "N/A"
                                     
-                                    # Format the log line
-                                    log_html += f'<div style="margin-bottom: 0.25rem;"><span style="color: #888;">[{timestamp}]</span> <span style="color: {level_color};">[{log.log_level}]</span> {log.message}</div>'
+                                    # Format the log line with background highlight for errors
+                                    bg_style = ""
+                                    if is_error or log.log_level == "ERROR":
+                                        bg_style = "background-color: rgba(255, 107, 107, 0.1); padding: 2px 4px; border-radius: 3px;"
+                                    elif is_warning or log.log_level == "WARNING":
+                                        bg_style = "background-color: rgba(255, 217, 61, 0.1); padding: 2px 4px; border-radius: 3px;"
+                                    
+                                    log_html += f'<div style="margin-bottom: 0.25rem; {bg_style}"><span style="color: #888;">[{timestamp}]</span> <span style="color: {level_color};">[{log.log_level}]</span> {log.message}</div>'
                                 
                                 log_html += '</div>'
                                 st.markdown(log_html, unsafe_allow_html=True)
+                                
+                                # Show error/warning summary
+                                if error_count > 0 or warning_count > 0:
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        if error_count > 0:
+                                            st.error(f"⚠️ {error_count} errors detected")
+                                    with col2:
+                                        if warning_count > 0:
+                                            st.warning(f"⚠️ {warning_count} warnings detected")
                                 
                                 # Add refresh button for logs
                                 if st.button("🔄 Refresh Logs", key=f"refresh_logs_{job.job_id}"):
