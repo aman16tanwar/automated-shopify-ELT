@@ -178,50 +178,17 @@ def run_customer_insights(config):
     
     df["total_spent"] = df["total_spent"].astype(float)
     df["store_name"] = df["store_name"].astype(str)
-    # Convert orders_count to int64 to avoid issues
-    df["orders_count"] = pd.to_numeric(df["orders_count"], errors='coerce').fillna(0).astype('int64')
     
     record_count = len(df)
 
     table_id = f"{config['GCP_PROJECT_ID']}.{config['BIGQUERY_DATASET']}.{config['BIGQUERY_TABLE_CUSTOMER_INSIGHTS']}"
     
-    # Debug: Check data types before upload
-    print("[DEBUG] DataFrame info before upload:")
-    print(df.info())
-    print("\n[DEBUG] Sample data:")
-    print(df.head(2))
-    
-    # Check for any infinity or NaN values that might cause issues
-    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    for col in numeric_cols:
-        if df[col].isin([float('inf'), float('-inf')]).any():
-            print(f"[WARNING] Column '{col}' contains infinity values")
-            df[col] = df[col].replace([float('inf'), float('-inf')], 0)
-        if df[col].isna().any():
-            print(f"[WARNING] Column '{col}' contains NaN values")
-            df[col] = df[col].fillna(0)
-    
     try:
-        # Try to identify data type issues before upload
-        print("[DEBUG] Checking for data type issues...")
-        
-        # Ensure all object columns are strings
-        for col in df.select_dtypes(include=['object']).columns:
-            df[col] = df[col].fillna('').astype(str)
-        
-        # Ensure datetime columns are properly formatted
-        datetime_cols = df.select_dtypes(include=['datetime64']).columns
-        for col in datetime_cols:
-            # Ensure timezone awareness is handled
-            if df[col].dt.tz is None:
-                df[col] = pd.to_datetime(df[col], utc=True)
-        
         # Pass credentials only if not None (for local auth)
         gbq_kwargs = {"destination_table": table_id, "project_id": config['GCP_PROJECT_ID'], "if_exists": "replace"}
         if credentials is not None:
             gbq_kwargs["credentials"] = credentials
         
-        print(f"[DEBUG] Starting upload to BigQuery table: {table_id}")
         to_gbq(df, **gbq_kwargs)
         print(f"[SUCCESS] Uploaded to BigQuery: {table_id} - {record_count} records")
     except Exception as e:
