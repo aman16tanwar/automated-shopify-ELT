@@ -29,7 +29,7 @@ app_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Prefer ADC; if not set, fall back to project-local JSON for dev
 if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
-    credentials_path = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "bigquery.json")
+    credentials_path = os.path.join(os.path.dirname(app_dir), "historical", "bigquery.json")
     if os.path.exists(credentials_path):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 
@@ -233,7 +233,7 @@ def mask_token(tok: str) -> str:
     return tok[:10] + "*" * max(0, (len(tok) - 15)) + tok[-5:]
 
 def load_configs():
-    cfg_path = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "store_config.json")
+    cfg_path = os.path.join(os.path.dirname(app_dir), "historical", "store_config.json")
     if os.path.exists(cfg_path):
         with open(cfg_path, "r") as f:
             return json.load(f), cfg_path
@@ -614,7 +614,7 @@ with tab1:
                     # Fallback to synchronous processing if job manager not available
                     with st.spinner("Loading historical data... This may take 0.5–4 hours depending on data volume."):
                         try:
-                            historical_script = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "main.py")
+                            historical_script = os.path.join(os.path.dirname(app_dir), "historical", "main.py")
 
                             progress_bar = st.progress(0)
                             status_text = st.empty()
@@ -1052,7 +1052,7 @@ if st.session_state.get("show_restart_historical"):
                 cfgs = upsert_config(cfgs, restart_cfg, key="MERCHANT")
                 save_configs(cfgs, cfg_path)
 
-                historical_script = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "main.py")
+                historical_script = os.path.join(os.path.dirname(app_dir), "historical", "main.py")
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()

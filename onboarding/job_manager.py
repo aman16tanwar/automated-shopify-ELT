@@ -341,7 +341,7 @@ class JobManager:
                 
                 # Get historical script path
                 app_dir = os.path.dirname(os.path.abspath(__file__))
-                historical_script = os.path.join(os.path.dirname(app_dir), "shopify_elt-historical", "main.py")
+                historical_script = os.path.join(os.path.dirname(app_dir), "historical", "main.py")
                 
                 # Create environment with job_id
                 env = os.environ.copy()
