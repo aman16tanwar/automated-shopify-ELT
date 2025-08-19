@@ -1,10 +1,7 @@
 shopifyapi
-pandas==2.1.4
-pandas-gbq==0.19.2
-google-cloud-bigquery==3.13.0
+pandas
+pandas-gbq
+google-cloud-bigquery
 google-auth
 google-cloud-core
 python-dotenv
-pytz==2023.3.post1
-python-dateutil==2.8.2
-pyarrow==14.0.1
