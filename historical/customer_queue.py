@@ -176,7 +176,7 @@ def run_customer_insights(config):
 
     df = pd.DataFrame(parse_customer_data(raw_customers))
     
-    df["total_spent"] = pd.to_numeric(df["total_spent"], errors='coerce').fillna(0.0).round(2)
+    df["total_spent"] = df["total_spent"].astype(float)
     df["store_name"] = df["store_name"].astype(str)
     # Convert orders_count to int64 to avoid issues
     df["orders_count"] = pd.to_numeric(df["orders_count"], errors='coerce').fillna(0).astype('int64')

@@ -207,7 +207,7 @@ def run_order_insights(config):
     # Data cleaning
     df["store_name"] = df["store_name"].astype(str)
     for col in ["total_discounts", "total_price", "total_tip_received", "shipping_line_price", "shipping_line_tax_amount", "shipping_line_tax_rate", "order_level_tax_amount", "duties", "additional_fees", "total_refunded"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0).round(2)
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)  # Ensure UTC
     df["updated_at"] = pd.to_datetime(df["updated_at"], errors="coerce", utc=True)  # Ensure UTC
     df["processed_at"] = pd.to_datetime(df["processed_at"], errors="coerce", utc=True)  # Ensure UTC

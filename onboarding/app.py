@@ -13,6 +13,7 @@ import pandas as pd
 import re
 import base64
 import time
+import html
 
 # -------------------------
 # Optional: Job Manager import (safe)
@@ -1189,37 +1190,24 @@ with tab3:
                     cleaned_cancelled[job_id] = cancel_time
             st.session_state.cancelled_jobs = cleaned_cancelled
         # Better controls
-        col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
+        col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
             if st.button("🔄 Refresh", help="Refresh job status"):
                 st.rerun()
         with col2:
-            # Auto-refresh toggle
-            auto_refresh = st.checkbox("🔄 Auto-refresh", value=False, help="Refresh every 10 seconds")
-            if auto_refresh and active_jobs:
-                # Add JavaScript for auto-refresh when there are active jobs
-                st.markdown("""
-                <script>
-                    setTimeout(function() {
-                        window.location.reload();
-                    }, 10000);
-                </script>
-                """, unsafe_allow_html=True)
-        with col3:
             # Add cleanup button for stuck jobs
             if st.button("🧹 Clean stuck jobs", type="secondary", help="Mark jobs pending >1hr as failed"):
                 with st.spinner("Cleaning stuck jobs..."):
                     cleaned, total = job_manager.force_clean_stuck_jobs(hours=1)
                     if cleaned > 0:
                         st.success(f"✅ Cleaned {cleaned} out of {total} stuck jobs")
-                        import time
                         time.sleep(1)
                         st.rerun()
                     elif total > 0:
                         st.warning(f"⚠️ Found {total} stuck jobs but couldn't clean them")
                     else:
                         st.info("No stuck jobs found")
-        with col4:
+        with col3:
             # Debug mode toggle
             debug_mode = st.checkbox("🐛 Debug", value=False)
         
@@ -1363,8 +1351,6 @@ with tab3:
                                             if logs_key in st.session_state:
                                                 del st.session_state[logs_key]
                                             
-                                            # Wait for BigQuery to process
-                                            import time
                                             time.sleep(2)
                                             
                                             # Verify cancellation if in debug mode
@@ -1392,7 +1378,7 @@ with tab3:
                             logs = job_manager.get_job_logs(job.job_id, limit=500)  # Get more logs
                             if logs:
                                 # Create a scrollable log container
-                                log_html = '<div style="background-color: #1e1e1e; color: #ffffff; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.85rem; max-height: 300px; overflow-y: auto;">'
+                                log_html = '<div style="background-color: #1e1e1e; color: #ffffff; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.85rem; height: 300px; overflow-y: scroll; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;">'
                                 
                                 # Show more logs and track errors
                                 error_count = 0
@@ -1426,7 +1412,7 @@ with tab3:
                                     elif is_warning or log.log_level == "WARNING":
                                         bg_style = "background-color: rgba(255, 217, 61, 0.1); padding: 2px 4px; border-radius: 3px;"
                                     
-                                    log_html += f'<div style="margin-bottom: 0.25rem; {bg_style}"><span style="color: #888;">[{timestamp}]</span> <span style="color: {level_color};">[{log.log_level}]</span> {log.message}</div>'
+                                    log_html += f'<div style="margin-bottom: 0.25rem; {bg_style}"><span style="color: #888;">[{timestamp}]</span> <span style="color: {level_color};">[{log.log_level}]</span> {html.escape(log.message)}</div>'
                                 
                                 log_html += '</div>'
                                 st.markdown(log_html, unsafe_allow_html=True)

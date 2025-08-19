@@ -165,7 +165,7 @@ def run_order_items_insights(config):
               i = item["node"]
               tax_lines = i.get("taxLines", [])
               tax_price = float(tax_lines[0]["priceSet"]["shopMoney"]["amount"]) if tax_lines else None
-              pre_tax_price = round(float(i.get("originalUnitPriceSet", {}).get("shopMoney", {}).get("amount", 0)), 2)
+              pre_tax_price = float(i.get("originalUnitPriceSet", {}).get("shopMoney", {}).get("amount", 0))
               discounted_price = float(i.get("discountedUnitPriceSet", {}).get("shopMoney", {}).get("amount", 0))
               # NEW: sum all discount allocations for this line item
               discount_allocations = i.get("discountAllocations", [])
@@ -237,12 +237,12 @@ def run_order_items_insights(config):
     df["line_item_variant_id"] = df["line_item_variant_id"].str.extract(r'(\d+)$')
     df["line_item_product_id"] = df["line_item_product_id"].str.extract(r'(\d+)$')
 
-    df["line_item_tax_price"] = df["line_item_tax_price"].fillna(0.0).astype(float).round(2)
-    df["refund_subtotal"] = df["refund_subtotal"].fillna(0.0).astype(float).round(2)
-    df["line_item_discount"] = df["line_item_discount"].fillna(0.0).astype(float).round(2)
-    df["shipping_line_discounted_price"] = df["shipping_line_discounted_price"].fillna(0.0).astype(float).round(2)
-    df["total_discounts"] = df["total_discounts"].fillna(0.0).astype(float).round(2)
-    df["total_price"] = df["total_price"].fillna(0.0).astype(float).round(2)
+    df["line_item_tax_price"] = df["line_item_tax_price"].fillna(0.0).astype(float)
+    df["refund_subtotal"] = df["refund_subtotal"].fillna(0.0).astype(float)
+    df["line_item_discount"] = df["line_item_discount"].fillna(0.0).astype(float)
+    df["shipping_line_discounted_price"] = df["shipping_line_discounted_price"].fillna(0.0).astype(float)
+    df["total_discounts"] = df["total_discounts"].fillna(0.0).astype(float)
+    df["total_price"] = df["total_price"].fillna(0.0).astype(float)
 
     print(df.info())
     print(df.head())
