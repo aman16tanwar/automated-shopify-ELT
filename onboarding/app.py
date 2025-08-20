@@ -309,7 +309,7 @@ def create_bq_resources(project_id: str, dataset_name: str):
         bigquery.SchemaField("line_item_title", STR),
         bigquery.SchemaField("line_item_variant_id", STR),
         bigquery.SchemaField("line_item_variant_title", STR),
-        bigquery.SchemaField("line_item_tax_rate", "FLOAT"),
+        bigquery.SchemaField("line_item_tax_rate", FLOAT),
         bigquery.SchemaField("line_item_vendor", STR),
         bigquery.SchemaField("line_item_tax_price", FLOAT),
         bigquery.SchemaField("shipping_line_code", STR),
