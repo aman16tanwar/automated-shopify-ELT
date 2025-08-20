@@ -773,8 +773,7 @@ with tab1:
                 dataset_name = st.text_input(
                     "BigQuery Dataset Name",
                     placeholder=f"e.g., {suggested_dataset}" if suggested_dataset else "shopify_store_name",
-                    help="Dataset name for BigQuery (must start with 'shopify_')",
-                    key="dataset_name_input"
+                    help="Dataset name for BigQuery (must start with 'shopify_')"
                 )
 
                 # Let project be editable to avoid mismatches
@@ -795,8 +794,7 @@ with tab1:
                     value=default_date,
                     min_value=datetime(2015, 1, 1),
                     max_value=datetime.now(),
-                    help="How far back to fetch historical data",
-                    key="backfill_date_input"
+                    help="How far back to fetch historical data"
                 )
             with c4:
                 st.markdown("")

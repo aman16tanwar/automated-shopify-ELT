@@ -176,21 +176,86 @@ def run_customer_insights(config):
 
     df = pd.DataFrame(parse_customer_data(raw_customers))
     
-    df["total_spent"] = df["total_spent"].astype(float)
-    # Round to 6 decimal places to avoid precision issues with BigQuery
-    df["total_spent"] = df["total_spent"].round(6)
-    # Fill NaN values with 0 for numeric fields
+    # Handle numeric fields properly for BigQuery NUMERIC type
+    # First convert to numeric, handling any conversion errors
+    df["total_spent"] = pd.to_numeric(df["total_spent"], errors='coerce')
+    # Fill NaN values with 0 for numeric fields BEFORE rounding
     df["total_spent"] = df["total_spent"].fillna(0.0)
-    df["orders_count"] = df["orders_count"].fillna(0)
+    # Convert to float64 explicitly to ensure proper type
+    df["total_spent"] = df["total_spent"].astype('float64')
+    # Round to 2 decimal places (money typically has 2 decimal places)
+    df["total_spent"] = df["total_spent"].round(2)
     
+    # Handle orders_count
+    df["orders_count"] = pd.to_numeric(df["orders_count"], errors='coerce')
+    df["orders_count"] = df["orders_count"].fillna(0)
+    df["orders_count"] = df["orders_count"].astype('int64')
+    
+    # Ensure string fields are properly typed
     df["store_name"] = df["store_name"].astype(str)
+    
+    # Convert all other string fields to ensure they're not causing issues
+    string_columns = [col for col in df.columns if col not in ['total_spent', 'orders_count', 'created_at', 'updated_at']]
+    for col in string_columns:
+        df[col] = df[col].fillna('').astype(str)
     
     record_count = len(df)
 
     table_id = f"{config['GCP_PROJECT_ID']}.{config['BIGQUERY_DATASET']}.{config['BIGQUERY_TABLE_CUSTOMER_INSIGHTS']}"
     
     try:
-        # Pass credentials only if not None (for local auth)
+        # Try with explicit table schema to avoid parquet conversion issues
+        from google.cloud import bigquery
+        
+        # Create BigQuery client
+        if credentials is not None:
+            client = bigquery.Client(project=config['GCP_PROJECT_ID'], credentials=credentials)
+        else:
+            client = bigquery.Client(project=config['GCP_PROJECT_ID'])
+        
+        # Define explicit schema matching the DataFrame
+        schema = [
+            bigquery.SchemaField("store_name", "STRING"),
+            bigquery.SchemaField("created_at", "TIMESTAMP"),
+            bigquery.SchemaField("updated_at", "TIMESTAMP"),
+            bigquery.SchemaField("id", "STRING"),
+            bigquery.SchemaField("email", "STRING"),
+            bigquery.SchemaField("first_name", "STRING"),
+            bigquery.SchemaField("display_name", "STRING"),
+            bigquery.SchemaField("total_spent", "FLOAT64"),  # Use FLOAT64 instead of NUMERIC
+            bigquery.SchemaField("last_order_id", "STRING"),
+            bigquery.SchemaField("last_order_name", "STRING"),
+            bigquery.SchemaField("orders_count", "INTEGER"),
+            bigquery.SchemaField("currency_code", "STRING"),
+            bigquery.SchemaField("phone", "STRING"),
+            bigquery.SchemaField("note", "STRING"),
+            bigquery.SchemaField("tags", "STRING"),
+            bigquery.SchemaField("default_address_id", "STRING"),
+            bigquery.SchemaField("default_address_first_name", "STRING"),
+            bigquery.SchemaField("default_address_last_name", "STRING"),
+            bigquery.SchemaField("default_address_company", "STRING"),
+            bigquery.SchemaField("default_address_address1", "STRING"),
+            bigquery.SchemaField("default_address_address2", "STRING"),
+            bigquery.SchemaField("default_address_city", "STRING"),
+            bigquery.SchemaField("default_address_province", "STRING"),
+            bigquery.SchemaField("default_address_country", "STRING"),
+            bigquery.SchemaField("default_address_zip", "STRING"),
+            bigquery.SchemaField("default_address_phone", "STRING"),
+            bigquery.SchemaField("default_address_name", "STRING"),
+        ]
+        
+        # Create table reference
+        table_ref = client.dataset(config['BIGQUERY_DATASET']).table(config['BIGQUERY_TABLE_CUSTOMER_INSIGHTS'])
+        
+        # Configure job
+        job_config = bigquery.LoadJobConfig(
+            schema=schema,
+            write_disposition="WRITE_TRUNCATE",  # Replace table
+            source_format=bigquery.SourceFormat.PARQUET,
+            autodetect=False
+        )
+        
+        # Try the original method first
         gbq_kwargs = {"destination_table": table_id, "project_id": config['GCP_PROJECT_ID'], "if_exists": "replace"}
         if credentials is not None:
             gbq_kwargs["credentials"] = credentials
