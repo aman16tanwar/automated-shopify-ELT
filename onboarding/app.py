@@ -762,17 +762,10 @@ with tab1:
                     help="Your Shopify Admin API access token"
                 )
             with c2:
-                # Auto dataset name - only suggest if user hasn't entered anything
-                suggested_dataset = ""
-                if merchant_url:
-                    m = normalize_shopify_url(merchant_url)
-                    suggested_name = re.sub(r'[^a-z0-9_]', '_', m.replace(".myshopify.com", "").lower())
-                    suggested_dataset = f"shopify_{suggested_name}" if suggested_name else ""
-
                 # Use key to maintain user input
                 dataset_name = st.text_input(
                     "BigQuery Dataset Name",
-                    placeholder=f"e.g., {suggested_dataset}" if suggested_dataset else "shopify_store_name",
+                    placeholder="shopify_store_name",
                     help="Dataset name for BigQuery (must start with 'shopify_')"
                 )
 
