@@ -157,7 +157,7 @@ def run_customer_insights(config):
                 "currency_code": cust.get("amountSpent", {}).get("currencyCode"),
                 "phone": cust.get("phone"),
                 "note": cust.get("note", ""),
-                "tags": cust.get("tags", ""),
+                "tags": cust.get("tags", []),
                 "default_address_id": default_address.get("id"),
                 "default_address_first_name": default_address.get("firstName"),
                 "default_address_last_name": default_address.get("lastName"),
@@ -181,15 +181,13 @@ def run_customer_insights(config):
 
     df = pd.DataFrame(parse_customer_data(raw_customers))
     
-    # Handle numeric fields properly for BigQuery NUMERIC type
+    # Handle numeric fields properly for BigQuery FLOAT type
     # First convert to numeric, handling any conversion errors
     df["total_spent"] = pd.to_numeric(df["total_spent"], errors='coerce')
-    # Fill NaN values with 0 for numeric fields BEFORE rounding
+    # Fill NaN values with 0 for numeric fields
     df["total_spent"] = df["total_spent"].fillna(0.0)
-    # Convert to float64 explicitly to ensure proper type
+    # Convert to float64 explicitly to ensure proper type for FLOAT in BigQuery
     df["total_spent"] = df["total_spent"].astype('float64')
-    # Round to 2 decimal places (money typically has 2 decimal places)
-    df["total_spent"] = df["total_spent"].round(2)
     
     # Handle orders_count
     df["orders_count"] = pd.to_numeric(df["orders_count"], errors='coerce')
@@ -203,12 +201,25 @@ def run_customer_insights(config):
     # Ensure string fields are properly typed and handle list/dict fields
     df["store_name"] = df["store_name"].astype(str)
     
-    # JSON serialization function for list/dict fields
+    # Handle tags as a REPEATED field (array) for BigQuery
+    # Shopify returns tags as a list already, so we just need to ensure it's a list
+    def process_tags(tags_value):
+        if isinstance(tags_value, list):
+            return tags_value
+        elif tags_value is None or tags_value == '':
+            return []
+        else:
+            # Fallback: if it's any other type, convert to string and wrap in list
+            return [str(tags_value)]
+    
+    df["tags"] = df["tags"].apply(process_tags)
+    
+    # JSON serialization function for list/dict fields (except tags which is REPEATED)
     def to_jsonish(x):
         return json.dumps(x, ensure_ascii=False) if isinstance(x, (list, dict)) else x
     
     # Convert all other fields, applying JSON serialization where needed
-    string_columns = [col for col in df.columns if col not in ['total_spent', 'orders_count', 'created_at', 'updated_at']]
+    string_columns = [col for col in df.columns if col not in ['total_spent', 'orders_count', 'created_at', 'updated_at', 'tags']]
     for col in string_columns:
         # Apply JSON serialization for potential list/dict values
         df[col] = df[col].apply(to_jsonish).fillna('').astype(str)

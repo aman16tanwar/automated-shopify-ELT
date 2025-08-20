@@ -211,21 +211,26 @@ def run_order_insights(config):
 
     # Data cleaning
     df["store_name"] = df["store_name"].astype(str)
+    # Convert all monetary fields to float for BigQuery FLOAT type
     for col in ["total_discounts", "total_price", "total_tip_received", "shipping_line_price", "shipping_line_tax_amount", "shipping_line_tax_rate", "order_level_tax_amount", "duties", "additional_fees", "total_refunded"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-        # Round to 6 decimal places to avoid precision issues with BigQuery
-        df[col] = df[col].round(6)
+        # Ensure they are float64 type
+        df[col] = df[col].astype('float64')
     
     # Standardize timestamps to UTC-naive for BigQuery
     for c in ["created_at", "updated_at", "processed_at"]:
         df[c] = pd.to_datetime(df[c], utc=True, errors="coerce").dt.tz_localize(None)
 
-    # Directly assign the timezone-aware Series with the dynamic timezone
+    # Convert processed_at_shopify_timezone to UTC-naive for BigQuery TIMESTAMP
+    # First create the timezone-aware series
     df["processed_at_shopify_timezone"] = pd.Series(
         [order['processed_at_shopify_timezone'] for order in orders_data],
         dtype=f'datetime64[ns, {shopify_timezone.zone}]'
     )
+    # Extract the date for processed_at_store_date before converting to UTC
     df["processed_at_store_date"] = df["processed_at_shopify_timezone"].dt.date
+    # Convert to UTC and then remove timezone info for BigQuery
+    df["processed_at_shopify_timezone"] = df["processed_at_shopify_timezone"].dt.tz_convert('UTC').dt.tz_localize(None)
 
     # JSON serialization function for list/dict fields
     def to_jsonish(x):
