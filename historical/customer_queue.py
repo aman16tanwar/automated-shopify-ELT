@@ -204,7 +204,6 @@ def run_customer_insights(config):
     df["store_name"] = df["store_name"].astype(str)
     
     # JSON serialization function for list/dict fields
-    import json
     def to_jsonish(x):
         return json.dumps(x, ensure_ascii=False) if isinstance(x, (list, dict)) else x
     

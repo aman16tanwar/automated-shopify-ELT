@@ -228,7 +228,6 @@ def run_order_insights(config):
     df["processed_at_store_date"] = df["processed_at_shopify_timezone"].dt.date
 
     # JSON serialization function for list/dict fields
-    import json
     def to_jsonish(x):
         return json.dumps(x, ensure_ascii=False) if isinstance(x, (list, dict)) else x
 

@@ -262,7 +262,6 @@ def run_order_items_insights(config):
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).round(6)
 
     # JSON serialization function for list/dict fields
-    import json
     def to_jsonish(x):
         return json.dumps(x, ensure_ascii=False) if isinstance(x, (list, dict)) else x
     
