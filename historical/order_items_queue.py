@@ -253,13 +253,13 @@ def run_order_items_insights(config):
     df["total_discounts"] = df["total_discounts"].fillna(0.0).astype(float)
     df["total_price"] = df["total_price"].fillna(0.0).astype(float)
     
-    # Round all monetary values to 6 decimal places to avoid BigQuery precision issues
+    # Convert all monetary values to float for BigQuery FLOAT type
     monetary_columns = ["line_item_tax_price", "refund_subtotal", "line_item_discount", 
                        "shipping_line_discounted_price", "total_discounts", "total_price",
                        "line_item_price", "line_item_discount_amount", "line_item_pre_tax_price"]
     for col in monetary_columns:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).round(6)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype('float64')
 
     # JSON serialization function for list/dict fields
     def to_jsonish(x):

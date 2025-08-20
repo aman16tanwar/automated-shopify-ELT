@@ -229,6 +229,10 @@ def run_customer_insights(config):
     table_id = f"{config['GCP_PROJECT_ID']}.{config['BIGQUERY_DATASET']}.{config['BIGQUERY_TABLE_CUSTOMER_INSIGHTS']}"
     
     try:
+        # Debug: Check the tags column specifically
+        print(f"[DEBUG] Tags column type: {type(df['tags'].iloc[0]) if len(df) > 0 else 'No data'}")
+        print(f"[DEBUG] Tags sample values: {df['tags'].head(3).tolist() if len(df) > 0 else 'No data'}")
+        
         # Upload to BigQuery using pandas_gbq
         # Note: credentials are already set in pandas_gbq.context above
         to_gbq(

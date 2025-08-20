@@ -277,8 +277,9 @@ def create_bq_resources(project_id: str, dataset_name: str):
     except Conflict:
         st.warning(f"Dataset {dataset_name} already exists")
 
-    # ---- Schemas (NUMERIC for money) ----
+    # ---- Schemas ----
     NUM = "NUMERIC"
+    FLOAT = "FLOAT"
     INT = "INTEGER"
     STR = "STRING"
     TS = "TIMESTAMP"
@@ -295,13 +296,13 @@ def create_bq_resources(project_id: str, dataset_name: str):
         bigquery.SchemaField("display_financial_status", STR),
         bigquery.SchemaField("name", STR),
         bigquery.SchemaField("payment_gateway_names", STR),
-        bigquery.SchemaField("total_discounts", "FLOAT"),
-        bigquery.SchemaField("total_price", "FLOAT"),
+        bigquery.SchemaField("total_discounts", FLOAT),
+        bigquery.SchemaField("total_price", FLOAT),
         bigquery.SchemaField("line_item_id", STR),
         bigquery.SchemaField("line_item_current_quantity", INT),
-        bigquery.SchemaField("line_item_pre_tax_price", "FLOAT"),
-        bigquery.SchemaField("line_item_price", "FLOAT"),
-        bigquery.SchemaField("line_item_discount", "FLOAT"),
+        bigquery.SchemaField("line_item_pre_tax_price", FLOAT),
+        bigquery.SchemaField("line_item_price", FLOAT),
+        bigquery.SchemaField("line_item_discount", FLOAT),
         bigquery.SchemaField("line_item_product_id", STR),
         bigquery.SchemaField("line_item_quantity", INT),
         bigquery.SchemaField("line_item_sku", STR),
@@ -310,12 +311,12 @@ def create_bq_resources(project_id: str, dataset_name: str):
         bigquery.SchemaField("line_item_variant_title", STR),
         bigquery.SchemaField("line_item_tax_rate", "FLOAT"),
         bigquery.SchemaField("line_item_vendor", STR),
-        bigquery.SchemaField("line_item_tax_price", "FLOAT"),
+        bigquery.SchemaField("line_item_tax_price", FLOAT),
         bigquery.SchemaField("shipping_line_code", STR),
-        bigquery.SchemaField("shipping_line_discounted_price", "FLOAT"),
+        bigquery.SchemaField("shipping_line_discounted_price", FLOAT),
         bigquery.SchemaField("discount_code", STR),
         bigquery.SchemaField("refund_restock_type", STR),
-        bigquery.SchemaField("refund_subtotal", "FLOAT"),
+        bigquery.SchemaField("refund_subtotal", FLOAT),
     ]
 
     # Customers
@@ -327,14 +328,14 @@ def create_bq_resources(project_id: str, dataset_name: str):
         bigquery.SchemaField("email", STR),
         bigquery.SchemaField("first_name", STR),
         bigquery.SchemaField("display_name", STR),
-        bigquery.SchemaField("total_spent", NUM),
+        bigquery.SchemaField("total_spent", FLOAT),
         bigquery.SchemaField("last_order_id", STR),
         bigquery.SchemaField("last_order_name", STR),
         bigquery.SchemaField("orders_count", INT),
         bigquery.SchemaField("currency_code", STR),
         bigquery.SchemaField("phone", STR),
         bigquery.SchemaField("note", STR),
-        bigquery.SchemaField("tags", STR),
+        bigquery.SchemaField("tags", STR, mode="REPEATED"),
         bigquery.SchemaField("default_address_id", STR),
         bigquery.SchemaField("default_address_first_name", STR),
         bigquery.SchemaField("default_address_last_name", STR),
@@ -355,8 +356,7 @@ def create_bq_resources(project_id: str, dataset_name: str):
         bigquery.SchemaField("created_at", TS),
         bigquery.SchemaField("updated_at", TS),
         bigquery.SchemaField("processed_at", TS),
-        bigquery.SchemaField("processed_at_shopify_datetime", DTN),
-        bigquery.SchemaField("shopify_timezone", STR),
+        bigquery.SchemaField("processed_at_shopify_timezone", TS),
         bigquery.SchemaField("processed_at_store_date", DT),
         bigquery.SchemaField("currency_code", STR),
         bigquery.SchemaField("discount_codes", STR),
@@ -364,27 +364,27 @@ def create_bq_resources(project_id: str, dataset_name: str):
         bigquery.SchemaField("display_financial_status", STR),
         bigquery.SchemaField("name", STR),
         bigquery.SchemaField("payment_gateway_names", STR),
-        bigquery.SchemaField("total_refunded", NUM),
+        bigquery.SchemaField("total_refunded", FLOAT),
         bigquery.SchemaField("shipping_line_title", STR),
-        bigquery.SchemaField("shipping_line_price", NUM),
-        bigquery.SchemaField("shipping_line_tax_rate", NUM),
-        bigquery.SchemaField("shipping_line_tax_amount", NUM),
-        bigquery.SchemaField("total_discounts", NUM),
-        bigquery.SchemaField("total_price", NUM),
+        bigquery.SchemaField("shipping_line_price", FLOAT),
+        bigquery.SchemaField("shipping_line_tax_rate", FLOAT),
+        bigquery.SchemaField("shipping_line_tax_amount", FLOAT),
+        bigquery.SchemaField("total_discounts", FLOAT),
+        bigquery.SchemaField("total_price", FLOAT),
         bigquery.SchemaField("cancelled_at", STR),
         bigquery.SchemaField("confirmation_number", STR),
         bigquery.SchemaField("display_fulfillment_status", STR),
         bigquery.SchemaField("landing_page_url", STR),
         bigquery.SchemaField("note", STR),
         bigquery.SchemaField("tags", STR),
-        bigquery.SchemaField("total_tip_received", NUM),
+        bigquery.SchemaField("total_tip_received", FLOAT),
         bigquery.SchemaField("customer_id", STR),
         bigquery.SchemaField("customer_country", STR),
         bigquery.SchemaField("line_items", STR),
         bigquery.SchemaField("vendor", STR),
-        bigquery.SchemaField("order_level_tax_amount", NUM),
-        bigquery.SchemaField("duties", NUM),
-        bigquery.SchemaField("additional_fees", NUM),
+        bigquery.SchemaField("order_level_tax_amount", FLOAT),
+        bigquery.SchemaField("duties", FLOAT),
+        bigquery.SchemaField("additional_fees", FLOAT),
     ]
 
     # Products
