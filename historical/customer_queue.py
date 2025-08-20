@@ -9,10 +9,13 @@ import shopify
 
 
 def run_customer_insights(config):
-    # Use Application Default Credentials in Cloud Run
+    import google.auth
+    
+    # Handle credentials for both Cloud Run and local environments
     if os.getenv("K_SERVICE"):  # This env var is set in Cloud Run
-        # Running in Cloud Run - use default credentials
-        credentials = None
+        # Running in Cloud Run - use ADC explicitly
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+        pandas_gbq.context.credentials = credentials
     else:
         # Running locally - use service account file if it exists
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -21,7 +24,9 @@ def run_customer_insights(config):
             credentials = service_account.Credentials.from_service_account_file(creds_path)
             pandas_gbq.context.credentials = credentials
         else:
-            credentials = None
+            # Fallback to ADC if no service account file
+            credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+            pandas_gbq.context.credentials = credentials
     
     pandas_gbq.context.project = config["GCP_PROJECT_ID"]
 
@@ -191,76 +196,37 @@ def run_customer_insights(config):
     df["orders_count"] = df["orders_count"].fillna(0)
     df["orders_count"] = df["orders_count"].astype('int64')
     
-    # Ensure string fields are properly typed
+    # Standardize timestamps to UTC-naive for BigQuery
+    for c in ["created_at", "updated_at"]:
+        df[c] = pd.to_datetime(df[c], utc=True, errors="coerce").dt.tz_localize(None)
+    
+    # Ensure string fields are properly typed and handle list/dict fields
     df["store_name"] = df["store_name"].astype(str)
     
-    # Convert all other string fields to ensure they're not causing issues
+    # JSON serialization function for list/dict fields
+    import json
+    def to_jsonish(x):
+        return json.dumps(x, ensure_ascii=False) if isinstance(x, (list, dict)) else x
+    
+    # Convert all other fields, applying JSON serialization where needed
     string_columns = [col for col in df.columns if col not in ['total_spent', 'orders_count', 'created_at', 'updated_at']]
     for col in string_columns:
-        df[col] = df[col].fillna('').astype(str)
+        # Apply JSON serialization for potential list/dict values
+        df[col] = df[col].apply(to_jsonish).fillna('').astype(str)
     
     record_count = len(df)
 
     table_id = f"{config['GCP_PROJECT_ID']}.{config['BIGQUERY_DATASET']}.{config['BIGQUERY_TABLE_CUSTOMER_INSIGHTS']}"
     
     try:
-        # Try with explicit table schema to avoid parquet conversion issues
-        from google.cloud import bigquery
-        
-        # Create BigQuery client
-        if credentials is not None:
-            client = bigquery.Client(project=config['GCP_PROJECT_ID'], credentials=credentials)
-        else:
-            client = bigquery.Client(project=config['GCP_PROJECT_ID'])
-        
-        # Define explicit schema matching the DataFrame
-        schema = [
-            bigquery.SchemaField("store_name", "STRING"),
-            bigquery.SchemaField("created_at", "TIMESTAMP"),
-            bigquery.SchemaField("updated_at", "TIMESTAMP"),
-            bigquery.SchemaField("id", "STRING"),
-            bigquery.SchemaField("email", "STRING"),
-            bigquery.SchemaField("first_name", "STRING"),
-            bigquery.SchemaField("display_name", "STRING"),
-            bigquery.SchemaField("total_spent", "FLOAT64"),  # Use FLOAT64 instead of NUMERIC
-            bigquery.SchemaField("last_order_id", "STRING"),
-            bigquery.SchemaField("last_order_name", "STRING"),
-            bigquery.SchemaField("orders_count", "INTEGER"),
-            bigquery.SchemaField("currency_code", "STRING"),
-            bigquery.SchemaField("phone", "STRING"),
-            bigquery.SchemaField("note", "STRING"),
-            bigquery.SchemaField("tags", "STRING"),
-            bigquery.SchemaField("default_address_id", "STRING"),
-            bigquery.SchemaField("default_address_first_name", "STRING"),
-            bigquery.SchemaField("default_address_last_name", "STRING"),
-            bigquery.SchemaField("default_address_company", "STRING"),
-            bigquery.SchemaField("default_address_address1", "STRING"),
-            bigquery.SchemaField("default_address_address2", "STRING"),
-            bigquery.SchemaField("default_address_city", "STRING"),
-            bigquery.SchemaField("default_address_province", "STRING"),
-            bigquery.SchemaField("default_address_country", "STRING"),
-            bigquery.SchemaField("default_address_zip", "STRING"),
-            bigquery.SchemaField("default_address_phone", "STRING"),
-            bigquery.SchemaField("default_address_name", "STRING"),
-        ]
-        
-        # Create table reference
-        table_ref = client.dataset(config['BIGQUERY_DATASET']).table(config['BIGQUERY_TABLE_CUSTOMER_INSIGHTS'])
-        
-        # Configure job
-        job_config = bigquery.LoadJobConfig(
-            schema=schema,
-            write_disposition="WRITE_TRUNCATE",  # Replace table
-            source_format=bigquery.SourceFormat.PARQUET,
-            autodetect=False
+        # Upload to BigQuery using pandas_gbq
+        # Note: credentials are already set in pandas_gbq.context above
+        to_gbq(
+            df, 
+            destination_table=table_id, 
+            project_id=config['GCP_PROJECT_ID'], 
+            if_exists="replace"
         )
-        
-        # Try the original method first
-        gbq_kwargs = {"destination_table": table_id, "project_id": config['GCP_PROJECT_ID'], "if_exists": "replace"}
-        if credentials is not None:
-            gbq_kwargs["credentials"] = credentials
-        
-        to_gbq(df, **gbq_kwargs)
         print(f"[SUCCESS] Uploaded to BigQuery: {table_id} - {record_count} records")
     except Exception as e:
         print(f"[ERROR] Failed to upload to BigQuery: {str(e)}")

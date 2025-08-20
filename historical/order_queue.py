@@ -40,10 +40,13 @@ def run_order_insights(config):
         config (dict): Configuration dictionary containing GCP_PROJECT_ID, BIGQUERY_DATASET,
             BIGQUERY_TABLE_ORDER_INSIGHTS, MERCHANT, and TOKEN.
     """
-    # Use Application Default Credentials in Cloud Run
+    import google.auth
+    
+    # Handle credentials for both Cloud Run and local environments
     if os.getenv("K_SERVICE"):  # This env var is set in Cloud Run
-        # Running in Cloud Run - use default credentials
-        credentials = None
+        # Running in Cloud Run - use ADC explicitly
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+        pandas_gbq.context.credentials = credentials
     else:
         # Running locally - use service account file if it exists
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -52,7 +55,9 @@ def run_order_insights(config):
             credentials = service_account.Credentials.from_service_account_file(creds_path)
             pandas_gbq.context.credentials = credentials
         else:
-            credentials = None
+            # Fallback to ADC if no service account file
+            credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+            pandas_gbq.context.credentials = credentials
     
     pandas_gbq.context.project = config["GCP_PROJECT_ID"]
 
@@ -210,9 +215,10 @@ def run_order_insights(config):
         df[col] = pd.to_numeric(df[col], errors="coerce")
         # Round to 6 decimal places to avoid precision issues with BigQuery
         df[col] = df[col].round(6)
-    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)  # Ensure UTC
-    df["updated_at"] = pd.to_datetime(df["updated_at"], errors="coerce", utc=True)  # Ensure UTC
-    df["processed_at"] = pd.to_datetime(df["processed_at"], errors="coerce", utc=True)  # Ensure UTC
+    
+    # Standardize timestamps to UTC-naive for BigQuery
+    for c in ["created_at", "updated_at", "processed_at"]:
+        df[c] = pd.to_datetime(df[c], utc=True, errors="coerce").dt.tz_localize(None)
 
     # Directly assign the timezone-aware Series with the dynamic timezone
     df["processed_at_shopify_timezone"] = pd.Series(
@@ -221,16 +227,23 @@ def run_order_insights(config):
     )
     df["processed_at_store_date"] = df["processed_at_shopify_timezone"].dt.date
 
+    # JSON serialization function for list/dict fields
+    import json
+    def to_jsonish(x):
+        return json.dumps(x, ensure_ascii=False) if isinstance(x, (list, dict)) else x
 
     df["customer_id"] = df["customer_id"].astype(str).str.extract(r'(\d+)$')
+    
+    # Apply JSON serialization for potential list/dict values (especially for line_items, vendor, discount_codes, payment_gateway_names)
     for col in ["vendor", "line_items", "discount_codes", "payment_gateway_names", "display_financial_status", "email", "name", "currency_code", "cancelled_at", "confirmation_number", "display_fulfillment_status", "landing_page_url", "note", "tags", "customer_id", "customer_country", "shipping_line_title"]:
-        df[col] = df[col].fillna("").astype(str)
+        df[col] = df[col].apply(to_jsonish).fillna("").astype(str)
 
     print(df.info())
 
     # Upload to BigQuery
     record_count = len(df)
-    to_gbq(df, destination_table=table_id, project_id=config["GCP_PROJECT_ID"], credentials=credentials, if_exists="replace")
+    # Note: credentials are already set in pandas_gbq.context above
+    to_gbq(df, destination_table=table_id, project_id=config["GCP_PROJECT_ID"], if_exists="replace")
     print(f"[SUCCESS] All data uploaded to BigQuery: {table_id} - {record_count} records")
     
     return record_count

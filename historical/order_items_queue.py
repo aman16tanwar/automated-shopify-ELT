@@ -27,10 +27,13 @@ def get_shopify_timezone(config):
 
 
 def run_order_items_insights(config):
-    # Use Application Default Credentials in Cloud Run
+    import google.auth
+    
+    # Handle credentials for both Cloud Run and local environments
     if os.getenv("K_SERVICE"):  # This env var is set in Cloud Run
-        # Running in Cloud Run - use default credentials
-        credentials = None
+        # Running in Cloud Run - use ADC explicitly
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+        pandas_gbq.context.credentials = credentials
     else:
         # Running locally - use service account file if it exists
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -39,7 +42,9 @@ def run_order_items_insights(config):
             credentials = service_account.Credentials.from_service_account_file(creds_path)
             pandas_gbq.context.credentials = credentials
         else:
-            credentials = None
+            # Fallback to ADC if no service account file
+            credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+            pandas_gbq.context.credentials = credentials
     
     pandas_gbq.context.project = config["GCP_PROJECT_ID"]
     table_id = f"{config['GCP_PROJECT_ID']}.{config['BIGQUERY_DATASET']}.{config['BIGQUERY_TABLE_ORDER_ITEMS_INSIGHTS']}"
@@ -231,8 +236,11 @@ def run_order_items_insights(config):
         
     df = pd.DataFrame(order_items_data)
     df["processed_at_store_date"] = pd.to_datetime(df["processed_at_store_date"]).dt.date
-    df["created_at"] = pd.to_datetime(df["created_at"], errors='coerce')
-    df["updated_at"] = pd.to_datetime(df["updated_at"], errors='coerce')
+    
+    # Standardize timestamps to UTC-naive for BigQuery
+    for c in ["created_at", "updated_at"]:
+        df[c] = pd.to_datetime(df[c], utc=True, errors="coerce").dt.tz_localize(None)
+    
     df["line_item_id"] = df["line_item_id"].str.extract(r'(\d+)$')
     df["line_item_variant_id"] = df["line_item_variant_id"].str.extract(r'(\d+)$')
     df["line_item_product_id"] = df["line_item_product_id"].str.extract(r'(\d+)$')
@@ -253,6 +261,16 @@ def run_order_items_insights(config):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).round(6)
 
+    # JSON serialization function for list/dict fields
+    import json
+    def to_jsonish(x):
+        return json.dumps(x, ensure_ascii=False) if isinstance(x, (list, dict)) else x
+    
+    # Apply JSON serialization to string columns that might contain lists/dicts
+    string_columns = [col for col in df.columns if df[col].dtype == 'object' and col not in ['created_at', 'updated_at', 'processed_at_store_date']]
+    for col in string_columns:
+        df[col] = df[col].apply(to_jsonish).fillna('').astype(str)
+
     print(df.info())
     print(df.head())
 
@@ -266,8 +284,9 @@ def run_order_items_insights(config):
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype('int64')
         
         # Upload to BigQuery
+        # Note: credentials are already set in pandas_gbq.context above
         to_gbq(df, destination_table=table_id, project_id=config["GCP_PROJECT_ID"], 
-               credentials=credentials, if_exists="replace", progress_bar=False)
+               if_exists="replace", progress_bar=False)
         print(f"[SUCCESS] Uploaded to BigQuery: {table_id} - {record_count} records")
         
     except Exception as e:

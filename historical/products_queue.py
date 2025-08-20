@@ -10,10 +10,13 @@ import shopify
 
 
 def run_product_insights(config):
-    # Use Application Default Credentials in Cloud Run
+    import google.auth
+    
+    # Handle credentials for both Cloud Run and local environments
     if os.getenv("K_SERVICE"):  # This env var is set in Cloud Run
-        # Running in Cloud Run - use default credentials
-        credentials = None
+        # Running in Cloud Run - use ADC explicitly
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+        pandas_gbq.context.credentials = credentials
     else:
         # Running locally - use service account file if it exists
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +25,9 @@ def run_product_insights(config):
             credentials = service_account.Credentials.from_service_account_file(creds_path)
             pandas_gbq.context.credentials = credentials
         else:
-            credentials = None
+            # Fallback to ADC if no service account file
+            credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+            pandas_gbq.context.credentials = credentials
     
     pandas_gbq.context.project = config["GCP_PROJECT_ID"]
 
@@ -260,11 +265,11 @@ def run_product_insights(config):
                 chunk_end = min(i + chunk_size, record_count)
                 print(f"[INFO] Uploading chunk {i//chunk_size + 1} ({i+1}-{chunk_end} of {record_count})...")
                 sys.stdout.flush()
+                # Note: credentials are already set in pandas_gbq.context above
                 to_gbq(
                     dataframe=df.iloc[i:chunk_end],
                     destination_table=table_id,
                     project_id=config["GCP_PROJECT_ID"],
-                    credentials=credentials,
                     if_exists="append" if i > 0 else "replace",
                     progress_bar=False
                 )
@@ -281,11 +286,11 @@ def run_product_insights(config):
             df_copy = df.copy()
             
             # Upload with explicit configuration
+            # Note: credentials are already set in pandas_gbq.context above
             to_gbq(
                 dataframe=df_copy,
                 destination_table=table_id,
                 project_id=config["GCP_PROJECT_ID"],
-                credentials=credentials,
                 if_exists="replace",
                 progress_bar=True,  # Enable progress bar for visibility
                 chunksize=500  # Process in smaller chunks even for small datasets
