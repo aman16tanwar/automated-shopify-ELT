@@ -237,12 +237,21 @@ def run_order_items_insights(config):
     df["line_item_variant_id"] = df["line_item_variant_id"].str.extract(r'(\d+)$')
     df["line_item_product_id"] = df["line_item_product_id"].str.extract(r'(\d+)$')
 
+    # Convert to float and fill NaN values
     df["line_item_tax_price"] = df["line_item_tax_price"].fillna(0.0).astype(float)
     df["refund_subtotal"] = df["refund_subtotal"].fillna(0.0).astype(float)
     df["line_item_discount"] = df["line_item_discount"].fillna(0.0).astype(float)
     df["shipping_line_discounted_price"] = df["shipping_line_discounted_price"].fillna(0.0).astype(float)
     df["total_discounts"] = df["total_discounts"].fillna(0.0).astype(float)
     df["total_price"] = df["total_price"].fillna(0.0).astype(float)
+    
+    # Round all monetary values to 6 decimal places to avoid BigQuery precision issues
+    monetary_columns = ["line_item_tax_price", "refund_subtotal", "line_item_discount", 
+                       "shipping_line_discounted_price", "total_discounts", "total_price",
+                       "line_item_price", "line_item_discount_amount", "line_item_pre_tax_price"]
+    for col in monetary_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).round(6)
 
     print(df.info())
     print(df.head())

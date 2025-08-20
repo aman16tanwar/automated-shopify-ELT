@@ -177,6 +177,12 @@ def run_customer_insights(config):
     df = pd.DataFrame(parse_customer_data(raw_customers))
     
     df["total_spent"] = df["total_spent"].astype(float)
+    # Round to 6 decimal places to avoid precision issues with BigQuery
+    df["total_spent"] = df["total_spent"].round(6)
+    # Fill NaN values with 0 for numeric fields
+    df["total_spent"] = df["total_spent"].fillna(0.0)
+    df["orders_count"] = df["orders_count"].fillna(0)
+    
     df["store_name"] = df["store_name"].astype(str)
     
     record_count = len(df)
