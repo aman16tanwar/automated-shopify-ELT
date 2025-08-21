@@ -16,12 +16,17 @@ import time
 import html
 
 # -------------------------
-# Optional: Job Manager import (safe)
+# Optional: Job Manager and Store Manager imports (safe)
 # -------------------------
 try:
     from job_manager import JobManager
 except Exception:
     JobManager = None  # handled later
+
+try:
+    from store_manager import StoreManager
+except Exception:
+    StoreManager = None  # handled later
 
 # -------------------------
 # Auth / environment setup
@@ -234,18 +239,71 @@ def mask_token(tok: str) -> str:
     return tok[:10] + "*" * max(0, (len(tok) - 15)) + tok[-5:]
 
 def load_configs():
+    """Load store configurations from BigQuery"""
+    if StoreManager:
+        try:
+            store_manager = StoreManager()
+            configs = store_manager.get_store_configs(active_only=True)
+            print(f"[DEBUG] Loaded {len(configs)} stores from BigQuery")
+            return configs, None  # No file path when using BigQuery
+        except Exception as e:
+            print(f"[ERROR] Failed to load store configs from BigQuery: {e}")
+            # Fallback to JSON file if BigQuery fails
+            cfg_path = os.path.join(os.path.dirname(app_dir), "historical", "store_config.json")
+            if os.path.exists(cfg_path):
+                try:
+                    with open(cfg_path, "r") as f:
+                        configs = json.load(f)
+                        print(f"[DEBUG] Fallback: Loaded {len(configs)} stores from {cfg_path}")
+                        # Offer to migrate to BigQuery
+                        if st.sidebar.button("Migrate configs to BigQuery"):
+                            migrated = store_manager.migrate_from_json(configs)
+                            st.sidebar.success(f"Migrated {migrated} stores to BigQuery")
+                        return configs, cfg_path
+                except Exception as e:
+                    print(f"[ERROR] Failed to load store config file: {e}")
+                    return [], cfg_path
+    # Fallback to JSON file if StoreManager not available
     cfg_path = os.path.join(os.path.dirname(app_dir), "historical", "store_config.json")
     if os.path.exists(cfg_path):
-        with open(cfg_path, "r") as f:
-            return json.load(f), cfg_path
+        try:
+            with open(cfg_path, "r") as f:
+                configs = json.load(f)
+                print(f"[DEBUG] Loaded {len(configs)} stores from {cfg_path}")
+                return configs, cfg_path
+        except Exception as e:
+            print(f"[ERROR] Failed to load store config: {e}")
+            st.error(f"Failed to load store configuration: {e}")
+            return [], cfg_path
+    else:
+        print(f"[DEBUG] Store config file not found at {cfg_path}")
     return [], cfg_path
 
 def save_configs(configs, path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(configs, f, indent=2)
+    """Save store configurations to BigQuery (ignores path parameter)"""
+    if StoreManager:
+        try:
+            store_manager = StoreManager()
+            # Upsert all configs
+            for config in configs:
+                store_manager.upsert_store_config(config)
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to save configs to BigQuery: {e}")
+            # Fallback to JSON file
+            if path:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as f:
+                    json.dump(configs, f, indent=2)
+            return False
+    # Fallback to JSON file if StoreManager not available
+    if path:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(configs, f, indent=2)
 
 def upsert_config(configs, new_cfg, key="MERCHANT"):
+    """Update or insert a config in the list (for compatibility)"""
     found = False
     for i, c in enumerate(configs):
         if c.get(key) == new_cfg.get(key):
@@ -511,8 +569,8 @@ try:
             <strong style="color: var(--happyweb-secondary);">🏪 {len(configs)} Store{'s' if len(configs) != 1 else ''} Connected</strong>
         </div>
         """, unsafe_allow_html=True)
-except Exception:
-    pass
+except Exception as e:
+    st.error(f"Error loading store configurations: {e}")
 
 # -------------------------
 # Initialize Job Manager
@@ -904,8 +962,19 @@ You're ready to load historical data and start gaining insights!
 # -------------------------
 with tab2:
     st.markdown("## 📊 Connected Stores")
+    
+    # Debug mode for troubleshooting
+    debug_mode = st.checkbox("Enable debug mode", key="debug_tab2")
+    
     try:
         cfgs, cfg_path = load_configs()
+        
+        if debug_mode:
+            st.info(f"Config path: {cfg_path}")
+            st.info(f"Number of stores loaded: {len(cfgs)}")
+            if cfgs:
+                st.json(cfgs[0])  # Show first store config as example
+        
         if cfgs:
             table_data = []
             for c in cfgs:

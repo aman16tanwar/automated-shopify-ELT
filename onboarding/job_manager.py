@@ -295,11 +295,13 @@ class JobManager:
         ),
         first_record AS (
             -- Get the first record for each job (for original data)
+            -- Exclude status updates to get the actual job creation record
             SELECT job_id, started_at, store_url, dataset_name, job_type
             FROM (
                 SELECT *,
                        ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY started_at ASC) as rn_asc
                 FROM `{self.project_id}.{self.jobs_dataset}.{self.jobs_table}`
+                WHERE job_type != 'status_update' OR job_type IS NULL
             )
             WHERE rn_asc = 1
         )
@@ -318,6 +320,7 @@ class JobManager:
              WHERE logs.job_id = f.job_id AND logs.log_level = 'ERROR') as error_count
         FROM first_record f
         JOIN latest_record l ON f.job_id = l.job_id
+        WHERE f.store_url IS NOT NULL AND f.dataset_name IS NOT NULL
         ORDER BY f.started_at DESC
         LIMIT @limit
         """

@@ -1,8 +1,8 @@
 steps:
-  # Build the container image
+  # Build the container image from parent directory using the Dockerfile in onboarding/
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/shopify-onboarding:$COMMIT_SHA', '.']
-    dir: 'onboarding'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/shopify-onboarding:$COMMIT_SHA', '-f', 'onboarding/Dockerfile', '.']
+    # Note: Building from parent directory to include both onboarding/ and historical/
 
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
