@@ -168,12 +168,8 @@ class StoreManager:
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "created_by": user or "system",
                 "updated_by": user or "system",
-                # Don't include metadata field if not needed - it will be NULL
+                "metadata": {}
             }
-            
-            # Only add metadata if it exists and has content
-            if config.get("metadata") and isinstance(config["metadata"], dict) and config["metadata"]:
-                insert_data["metadata"] = config["metadata"]
             
             table_id = f"{self.project_id}.{self.dataset}.{self.table}"
             errors = self.client.insert_rows_json(table_id, [insert_data])

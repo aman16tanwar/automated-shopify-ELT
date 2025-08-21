@@ -10,7 +10,7 @@ import uuid
 
 class StoreManager:
     def __init__(self, project_id=None):
-        self.project_id = project_id or os.environ.get("GCP_PROJECT_ID") or "happyweb-340014"
+        self.project_id = project_id or os.environ.get("GCP_PROJECT_ID")
         self.client = bigquery.Client(project=self.project_id)
         self.dataset = "shopify_logs"
         self.table = "store_config"
@@ -168,12 +168,8 @@ class StoreManager:
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "created_by": user or "system",
                 "updated_by": user or "system",
-                # Don't include metadata field if not needed - it will be NULL
+                "metadata": {}
             }
-            
-            # Only add metadata if it exists and has content
-            if config.get("metadata") and isinstance(config["metadata"], dict) and config["metadata"]:
-                insert_data["metadata"] = config["metadata"]
             
             table_id = f"{self.project_id}.{self.dataset}.{self.table}"
             errors = self.client.insert_rows_json(table_id, [insert_data])
