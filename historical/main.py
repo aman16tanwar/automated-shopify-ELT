@@ -35,6 +35,10 @@ logger = JobLogger()
 
 # Log startup
 print(f"[INFO] Starting historical pipeline. Job ID: {os.environ.get('PIPELINE_JOB_ID', 'None')}", flush=True)
+print(f"[INFO] Environment: Cloud Run Job" if os.getenv("K_SERVICE") else "[INFO] Environment: Local", flush=True)
+print(f"[INFO] Target Store: {os.environ.get('TARGET_STORE', 'All stores')}", flush=True)
+print(f"[INFO] Store Config JSON: {'Present' if os.environ.get('STORE_CONFIG_JSON') else 'Not present'}", flush=True)
+sys.stdout.flush()
 logger.info(f"Historical pipeline started. Job ID: {os.environ.get('PIPELINE_JOB_ID', 'None')}")
 
 # Read store config from BigQuery or fallback to JSON file

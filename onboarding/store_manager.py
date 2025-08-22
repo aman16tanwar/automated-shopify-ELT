@@ -97,6 +97,9 @@ class StoreManager:
     
     def upsert_store_config(self, config, user=None):
         """Insert or update a store configuration"""
+        merchant = config.get("MERCHANT", "unknown")
+        print(f"[StoreManager] Starting upsert for merchant: {merchant}", flush=True)
+        
         # Check if store exists
         check_query = f"""
         SELECT merchant FROM `{self.project_id}.{self.dataset}.{self.table}`
@@ -155,6 +158,7 @@ class StoreManager:
             )
             
             self.client.query(merge_query, job_config=job_config).result()
+            print(f"[StoreManager] Successfully updated existing store: {merchant}", flush=True)
         else:
             # Insert new
             insert_data = {
@@ -180,6 +184,8 @@ class StoreManager:
             
             if errors:
                 raise Exception(f"Failed to insert store config: {errors}")
+            
+            print(f"[StoreManager] Successfully inserted new store: {merchant}", flush=True)
     
     def delete_store_config(self, merchant):
         """Soft delete a store by marking as inactive"""

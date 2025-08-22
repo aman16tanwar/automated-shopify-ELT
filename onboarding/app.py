@@ -14,6 +14,7 @@ import re
 import base64
 import time
 import html
+from google.cloud import bigquery
 
 # -------------------------
 # Optional: Job Manager and Store Manager imports (safe)
@@ -286,18 +287,25 @@ def save_configs(configs, path):
             store_manager = StoreManager()
             # Upsert all configs
             for config in configs:
+                merchant = config.get("MERCHANT", "unknown")
+                print(f"[INFO] Saving store config to BigQuery: {merchant}", flush=True)
                 store_manager.upsert_store_config(config)
+                print(f"[SUCCESS] Store config saved to BigQuery: {merchant}", flush=True)
             return True
         except Exception as e:
-            print(f"[ERROR] Failed to save configs to BigQuery: {e}")
+            print(f"[ERROR] Failed to save configs to BigQuery: {e}", flush=True)
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
             # Fallback to JSON file
             if path:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w") as f:
                     json.dump(configs, f, indent=2)
+                print(f"[INFO] Saved to JSON file instead: {path}", flush=True)
             return False
     # Fallback to JSON file if StoreManager not available
     if path:
+        print(f"[WARNING] StoreManager not available, saving to JSON: {path}", flush=True)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump(configs, f, indent=2)
@@ -1282,44 +1290,59 @@ with tab3:
                 if st.button("🔄 Refresh Table"):
                     st.rerun()
             with col2:
-                if st.button("🗑️ Clear History", type="secondary"):
-                    # Clear completed and failed jobs from the table
-                    if st.session_state.get("confirm_clear", False):
+                # Use a unique key for the button to track state properly
+                clear_button_key = "clear_history_btn"
+                
+                if st.button("🗑️ Clear History", type="secondary", key=clear_button_key):
+                    # Check if this is the confirmation click
+                    if st.session_state.get("confirm_clear_state", 0) == 1:
                         # User confirmed, clear the data
                         try:
+                            # First, get job IDs to delete logs
+                            job_ids_query = f"""
+                            SELECT DISTINCT job_id 
+                            FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.jobs_table}`
+                            WHERE status IN ('completed', 'failed', 'cancelled')
+                            """
+                            job_ids_result = job_manager.client.query(job_ids_query).result()
+                            job_ids = [row.job_id for row in job_ids_result]
+                            
+                            if job_ids:
+                                # Delete associated logs first
+                                delete_logs_query = f"""
+                                DELETE FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.logs_table}`
+                                WHERE job_id IN UNNEST(@job_ids)
+                                """
+                                
+                                log_job_config = bigquery.QueryJobConfig(
+                                    query_parameters=[
+                                        bigquery.ArrayQueryParameter("job_ids", "STRING", job_ids),
+                                    ]
+                                )
+                                
+                                job_manager.client.query(delete_logs_query, job_config=log_job_config).result()
+                            
                             # Delete all completed/failed/cancelled jobs from BigQuery
                             delete_query = f"""
                             DELETE FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.jobs_table}`
                             WHERE status IN ('completed', 'failed', 'cancelled')
-                            AND job_type != 'status_update'
                             """
                             job_manager.client.query(delete_query).result()
                             
-                            # Also delete associated logs
-                            delete_logs_query = f"""
-                            DELETE FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.logs_table}`
-                            WHERE job_id IN (
-                                SELECT DISTINCT job_id 
-                                FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.jobs_table}`
-                                WHERE status IN ('completed', 'failed', 'cancelled')
-                            )
-                            """
-                            job_manager.client.query(delete_logs_query).result()
-                            
                             st.success("✅ History cleared successfully!")
-                            st.session_state["confirm_clear"] = False
+                            st.session_state["confirm_clear_state"] = 0
                             time.sleep(1)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error clearing history: {e}")
-                            st.session_state["confirm_clear"] = False
+                            st.session_state["confirm_clear_state"] = 0
                     else:
-                        st.session_state["confirm_clear"] = True
-                        st.warning("⚠️ Click again to confirm clearing all completed/failed jobs")
+                        # First click - show confirmation
+                        st.session_state["confirm_clear_state"] = 1
             
-            # Reset confirmation if user clicks elsewhere
-            if "confirm_clear" in st.session_state and not st.session_state.get("just_clicked_clear", False):
-                st.session_state["confirm_clear"] = False
+            # Show warning if in confirmation state
+            if st.session_state.get("confirm_clear_state", 0) == 1:
+                st.warning("⚠️ Click 'Clear History' again to confirm clearing all completed/failed jobs")
             
             df = pd.DataFrame(table_data)
             st.dataframe(
@@ -1335,6 +1358,14 @@ with tab3:
             )
             
             st.info("💡 For detailed logs and error messages, please check the Cloud Run console in Google Cloud Platform.")
+            
+            # Add helpful links
+            if cr_job_manager and any(row.get("Cloud Run Status") != "-" for row in table_data):
+                st.markdown("### 🔗 Quick Links")
+                st.markdown(f"""
+                - [View Cloud Run Jobs Console](https://console.cloud.google.com/run/jobs?project={job_manager.project_id})
+                - [View BigQuery Logs](https://console.cloud.google.com/bigquery?project={job_manager.project_id}&ws=!1m5!1m4!4m3!1s{job_manager.project_id}!2s{job_manager.jobs_dataset}!3s{job_manager.logs_table})
+                """)
         else:
             st.info("No pipeline jobs found. Start a historical load to see job status here.")
         
