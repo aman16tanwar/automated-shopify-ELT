@@ -113,6 +113,7 @@ class CloudRunJobManager:
             )
             
             print(f"Created Cloud Run Job: {job_name}")
+            print(f"CLOUD_RUN_JOB_NAME:{job_name}")  # Log for tracking in UI
             
             # Wait for job creation to complete
             operation.result()

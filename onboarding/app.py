@@ -986,24 +986,63 @@ with tab2:
         if cfgs:
             table_data = []
             for c in cfgs:
+                # Get the store's pipeline status from job_manager
+                store_status = "⚪ Not Synced"
+                last_sync_time = "Never"
+                
+                if job_manager:
+                    try:
+                        # Get the most recent job for this store
+                        store_jobs = job_manager.get_recent_jobs(limit=50)  # Get more to find this store
+                        store_url = c.get("MERCHANT")
+                        
+                        # Filter jobs for this specific store
+                        this_store_jobs = [j for j in store_jobs if hasattr(j, 'store_url') and j.store_url == store_url]
+                        
+                        if this_store_jobs:
+                            # Get the most recent job
+                            latest_job = this_store_jobs[0]
+                            
+                            # Map job status to store status
+                            if latest_job.status == "completed":
+                                store_status = "🟢 Active"
+                            elif latest_job.status == "running":
+                                store_status = "🔄 Pipeline Running"
+                            elif latest_job.status == "failed":
+                                store_status = "❌ Failed"
+                            elif latest_job.status == "cancelled":
+                                store_status = "🚫 Cancelled"
+                            
+                            # Update last sync time
+                            if hasattr(latest_job, 'completed_at') and latest_job.completed_at:
+                                last_sync_time = latest_job.completed_at.strftime("%Y-%m-%d %H:%M")
+                            elif hasattr(latest_job, 'started_at') and latest_job.started_at:
+                                last_sync_time = latest_job.started_at.strftime("%Y-%m-%d %H:%M")
+                    except Exception as e:
+                        print(f"Error getting job status for {c.get('MERCHANT')}: {e}")
+                
                 table_data.append({
                     "Store URL": c.get("MERCHANT"),
                     "Dataset": c.get("BIGQUERY_DATASET"),
                     "Start Date": c.get("BACKFILL_START_DATE", "N/A"),
-                    "Last Updated": c.get("last_updated", "Never"),
-                    "Status": "🟢 Active",
+                    "Last Sync": last_sync_time,
+                    "Status": store_status,
                     "_merchant": c.get("MERCHANT"),
                     "_token": c.get("TOKEN", "")
                 })
             df = pd.DataFrame(table_data)
 
             c1, c2, c3 = st.columns(3)
+            # Count active stores based on status
+            active_count = sum(1 for row in table_data if "🟢" in row["Status"])
+            running_count = sum(1 for row in table_data if "🔄" in row["Status"])
+            
             c1.metric("Total Stores", len(cfgs))
-            c2.metric("Active Stores", len(cfgs))
-            c3.metric("Data Volume", "~100GB+")
+            c2.metric("Active Stores", active_count)
+            c3.metric("Running Pipelines", running_count)
 
             st.markdown("---")
-            display_df = df[["Store URL", "Dataset", "Start Date", "Last Updated", "Status"]]
+            display_df = df[["Store URL", "Dataset", "Start Date", "Last Sync", "Status"]]
             st.dataframe(
                 display_df,
                 use_container_width=True,
@@ -1012,7 +1051,7 @@ with tab2:
                     "Store URL": st.column_config.TextColumn("Store URL", width="medium"),
                     "Dataset": st.column_config.TextColumn("BigQuery Dataset", width="medium"),
                     "Start Date": st.column_config.TextColumn("Start Date", width="small"),
-                    "Last Updated": st.column_config.TextColumn("Last Updated", width="medium"),
+                    "Last Sync": st.column_config.TextColumn("Last Sync", width="medium"),
                     "Status": st.column_config.TextColumn("Status", width="small"),
                 }
             )
@@ -1255,14 +1294,53 @@ with tab3:
                     
                     # If not found in logs, try to generate it from store URL
                     if not cloud_run_job_name and hasattr(job, 'store_url'):
-                        cloud_run_job_name = cr_job_manager.sanitize_job_name(job.store_url)
+                        # Try multiple variations of the job name
+                        base_name = cr_job_manager.sanitize_job_name(job.store_url)
+                        possible_names = [
+                            base_name,
+                            f"{base_name}-v2",
+                            f"{base_name}-v3",
+                            f"{base_name}-v4",
+                            f"{base_name}-v5"
+                        ]
+                        
+                        for name in possible_names:
+                            try:
+                                status = cr_job_manager.get_job_status(name)
+                                if status != "No executions found":
+                                    cloud_run_job_name = name
+                                    cloud_run_status = status
+                                    break
+                            except:
+                                continue
                     
-                    # Get status if we have a job name
-                    if cloud_run_job_name:
+                    # Get status if we have a job name and haven't already got it
+                    if cloud_run_job_name and cloud_run_status == "N/A":
                         try:
                             cloud_run_status = cr_job_manager.get_job_status(cloud_run_job_name)
                         except:
                             pass
+                    
+                    # Update BigQuery status based on Cloud Run status
+                    if cloud_run_status in ["Completed", "Failed", "Cancelled"]:
+                        # Map Cloud Run status to our status
+                        status_map = {
+                            "Completed": "completed",
+                            "Failed": "failed",
+                            "Cancelled": "cancelled"
+                        }
+                        new_status = status_map.get(cloud_run_status, job.status)
+                        
+                        # Update status if it's different and currently shows as running
+                        if job.status == "running" and new_status != job.status:
+                            try:
+                                job_manager.update_job_status(
+                                    job_id=job.job_id,
+                                    status=new_status,
+                                    error_message=f"Status updated from Cloud Run: {cloud_run_status}"
+                                )
+                            except:
+                                pass
                 
                 # Simple status display
                 if job.status == "running" or job.status == "pending":
@@ -1276,6 +1354,7 @@ with tab3:
                 
                 table_data.append({
                     "Pipeline Name": job.store_url,
+                    "Cloud Run Job": cloud_run_job_name if cloud_run_job_name else "-",
                     "Status": display_status,
                     "Cloud Run Status": cloud_run_status if cloud_run_status != "N/A" else "-",
                     "Started": job.started_at.strftime("%Y-%m-%d %H:%M") if hasattr(job, 'started_at') and job.started_at else "N/A"
@@ -1293,7 +1372,7 @@ with tab3:
                 # Use a unique key for the button to track state properly
                 clear_button_key = "clear_history_btn"
                 
-                if st.button("🗑️ Clear History", type="secondary", key=clear_button_key):
+                if st.button("🗑️ Clear History", type="secondary", key=clear_button_key, help="Remove completed, failed, and cancelled jobs from history. Does NOT affect running Cloud Run Jobs."):
                     # Check if this is the confirmation click
                     if st.session_state.get("confirm_clear_state", 0) == 1:
                         # User confirmed, clear the data
