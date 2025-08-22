@@ -41,13 +41,11 @@ EXPOSE 8080
 # Health check
 HEALTHCHECK CMD curl --fail http://localhost:8080/_stcore/health || exit 1
 
-# Run Streamlit
-CMD streamlit run onboarding/app.py \
-    --server.port=$PORT \
-    --server.address=0.0.0.0 \
-    --server.headless=true \
-    --browser.gatherUsageStats=false \
-    --theme.primaryColor="#17D4BE" \
-    --theme.backgroundColor="#FFFFFF" \
-    --theme.secondaryBackgroundColor="#F8FFFE" \
-    --theme.textColor="#002C5F"
+# Copy entrypoint script
+COPY entrypoint.py /app/
+
+# Set default PORT for Streamlit
+ENV PORT=8080
+
+# Run the entrypoint which decides what to execute
+CMD ["python", "/app/entrypoint.py"]
