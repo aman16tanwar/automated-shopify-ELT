@@ -16,6 +16,7 @@ class CloudRunJobManager:
         self.project_id = project_id or os.environ.get("GCP_PROJECT_ID") or "happyweb-340014"
         self.region = region
         self.client = run_v2.JobsClient()
+        self.executions_client = run_v2.ExecutionsClient()
         # Use the provided service account
         self.service_account = "elt-pipelines@happyweb-340014.iam.gserviceaccount.com"
         
@@ -179,7 +180,7 @@ class CloudRunJobManager:
         """Get list of executions for a job"""
         try:
             parent = f"projects/{self.project_id}/locations/{self.region}/jobs/{job_name}"
-            executions = self.client.list_executions(parent=parent)
+            executions = self.executions_client.list_executions(parent=parent)
             return list(executions)
         except Exception as e:
             print(f"Error listing executions: {e}")

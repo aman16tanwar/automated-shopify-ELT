@@ -669,8 +669,26 @@ with tab1:
                     try:
                         # Get store config
                         merchant = st.session_state.get('last_merchant')
-                        cfgs, cfg_path = load_configs()
-                        store_config = next((c for c in cfgs if c.get("MERCHANT") == merchant), None)
+                        
+                        # First try to use session state (most reliable for just-created stores)
+                        if all(key in st.session_state for key in ['last_merchant', 'last_dataset', 'last_token', 'backfill_date']):
+                            print(f"[INFO] Using config from session state for {merchant}", flush=True)
+                            store_config = {
+                                "MERCHANT": st.session_state.get('last_merchant'),
+                                "TOKEN": st.session_state.get('last_token'),
+                                "GCP_PROJECT_ID": os.getenv("GCP_PROJECT_ID", "happyweb-340014"),
+                                "BIGQUERY_DATASET": st.session_state.get('last_dataset'),
+                                "BIGQUERY_TABLE_CUSTOMER_INSIGHTS": "customer_insights",
+                                "BIGQUERY_TABLE_ORDER_INSIGHTS": "order_insights",
+                                "BIGQUERY_TABLE_ORDER_ITEMS_INSIGHTS": "order_items_insights",
+                                "BIGQUERY_TABLE_PRODUCT_INSIGHTS": "products_insights",
+                                "BACKFILL_START_DATE": st.session_state.get('backfill_date')
+                            }
+                        else:
+                            # Fallback to loading from BigQuery
+                            print(f"[INFO] Loading config from BigQuery for {merchant}", flush=True)
+                            cfgs, cfg_path = load_configs()
+                            store_config = next((c for c in cfgs if c.get("MERCHANT") == merchant), None)
                         
                         if store_config:
                             # Create job and start async processing
@@ -973,9 +991,23 @@ with tab1:
                             "last_updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                         }
 
-                        cfgs, cfg_path = load_configs()
-                        cfgs = upsert_config(cfgs, config, key="MERCHANT")
-                        save_configs(cfgs, cfg_path)
+                        # Don't load and save all configs - just save the new one directly
+                        if StoreManager:
+                            try:
+                                store_manager = StoreManager()
+                                print(f"[INFO] Saving new store config directly to BigQuery: {merchant_url_norm}", flush=True)
+                                store_manager.upsert_store_config(config)
+                                print(f"[SUCCESS] New store config saved to BigQuery: {merchant_url_norm}", flush=True)
+                            except Exception as e:
+                                print(f"[ERROR] Failed to save new store config: {e}", flush=True)
+                                st.error(f"Error saving configuration: {e}")
+                                # Don't continue if save failed
+                                raise
+                        else:
+                            # Fallback to old method
+                            cfgs, cfg_path = load_configs()
+                            cfgs = upsert_config(cfgs, config, key="MERCHANT")
+                            save_configs(cfgs, cfg_path)
 
                         # Finalize
                         status_text.text("✅ Configuration complete!")
