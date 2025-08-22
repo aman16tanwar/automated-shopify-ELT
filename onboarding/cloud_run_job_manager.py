@@ -44,14 +44,17 @@ class CloudRunJobManager:
         
         while True:
             full_name = f"{parent}/jobs/{job_name}"
+            print(f"Checking if job exists: {job_name}")
             try:
                 # Check if job exists
-                self.client.get_job(name=full_name)
+                existing_job = self.client.get_job(name=full_name)
+                print(f"Job {job_name} exists, trying next version...")
                 # If we get here, job exists, try next version
                 version += 1
                 job_name = f"{base_name}-v{version}"
             except exceptions.NotFound:
                 # Job doesn't exist, we can use this name
+                print(f"Job {job_name} does not exist, using this name")
                 return job_name
             except Exception as e:
                 print(f"Error checking job existence: {e}")
@@ -62,7 +65,10 @@ class CloudRunJobManager:
         """Create a Cloud Run Job for historical pipeline"""
         # Generate job name
         base_job_name = self.sanitize_job_name(store_config['MERCHANT'])
+        print(f"Base job name: {base_job_name}")
+        
         job_name = self.get_unique_job_name(base_job_name)
+        print(f"Unique job name: {job_name}")
         
         # Full resource name
         parent = f"projects/{self.project_id}/locations/{self.region}"
@@ -112,7 +118,18 @@ class CloudRunJobManager:
             operation.result()
             
             # Execute the job immediately
+            print(f"Executing job: {full_job_name}")
             execution_response = self.execute_job(full_job_name)
+            
+            if not execution_response:
+                print("WARNING: Job created but execution failed")
+                return {
+                    "success": True,  # Job was created successfully
+                    "job_name": job_name,
+                    "full_name": full_job_name,
+                    "execution_name": None,
+                    "warning": "Job created but execution failed"
+                }
             
             return {
                 "success": True,
