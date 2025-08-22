@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#\!/usr/bin/env python3
 """
 Entrypoint that runs either the Streamlit UI or historical pipeline based on environment
 """
@@ -56,3 +56,4 @@ else:
         "--theme.secondaryBackgroundColor=#F8FFFE",
         "--theme.textColor=#002C5F"
     ])
+ENDOFFILE < /dev/null
