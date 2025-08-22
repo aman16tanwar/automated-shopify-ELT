@@ -285,9 +285,43 @@ def save_configs(configs, path):
     if StoreManager:
         try:
             store_manager = StoreManager()
-            # Upsert all configs
+            # Only save configs that have been modified (have a recent timestamp)
+            # This avoids unnecessary updates that could hit streaming buffer issues
             for config in configs:
                 merchant = config.get("MERCHANT", "unknown")
+                # Check if this config was recently modified (within last 5 seconds)
+                # If last_updated is not set or is old, skip the update
+                last_updated = config.get("last_updated")
+                if last_updated:
+                    try:
+                        # Parse the timestamp
+                        from datetime import datetime, timezone, timedelta
+                        if isinstance(last_updated, str):
+                            # Handle various timestamp formats
+                            for fmt in ["%Y-%m-%d %H:%M:%S %Z", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+                                try:
+                                    last_updated_dt = datetime.strptime(last_updated.replace(" UTC", ""), fmt.replace(" %Z", ""))
+                                    if not last_updated_dt.tzinfo:
+                                        last_updated_dt = last_updated_dt.replace(tzinfo=timezone.utc)
+                                    break
+                                except:
+                                    continue
+                            else:
+                                # If no format worked, treat as recently modified
+                                last_updated_dt = datetime.now(timezone.utc)
+                        else:
+                            last_updated_dt = last_updated
+                        
+                        # Only save if modified within last 30 seconds
+                        time_diff = datetime.now(timezone.utc) - last_updated_dt
+                        if time_diff.total_seconds() > 30:
+                            print(f"[INFO] Skipping save for {merchant} - not recently modified", flush=True)
+                            continue
+                    except Exception as e:
+                        print(f"[WARNING] Could not parse last_updated for {merchant}: {e}", flush=True)
+                        # If we can't parse, skip to avoid unnecessary updates
+                        continue
+                
                 print(f"[INFO] Saving store config to BigQuery: {merchant}", flush=True)
                 store_manager.upsert_store_config(config)
                 print(f"[SUCCESS] Store config saved to BigQuery: {merchant}", flush=True)
@@ -935,7 +969,8 @@ with tab1:
                             "BIGQUERY_TABLE_ORDER_ITEMS_INSIGHTS": "order_items_insights",
                             "BIGQUERY_TABLE_PRODUCT_INSIGHTS": "products_insights",
                             "BIGQUERY_CREDENTIALS_PATH": os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", ""),
-                            "BACKFILL_START_DATE": backfill_date.strftime("%Y-%m-%d")
+                            "BACKFILL_START_DATE": backfill_date.strftime("%Y-%m-%d"),
+                            "last_updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                         }
 
                         cfgs, cfg_path = load_configs()
@@ -948,6 +983,7 @@ with tab1:
 
                         st.session_state["last_merchant"] = merchant_url_norm
                         st.session_state["last_dataset"] = dataset_name
+                        st.session_state["last_token"] = access_token
                         st.session_state["backfill_date"] = backfill_date.strftime("%Y-%m-%d")
                         st.session_state["show_historical"] = True
                         st.session_state["current_step"] = 2  # Move to step 2
