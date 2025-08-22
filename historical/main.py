@@ -38,22 +38,35 @@ print(f"[INFO] Starting historical pipeline. Job ID: {os.environ.get('PIPELINE_J
 logger.info(f"Historical pipeline started. Job ID: {os.environ.get('PIPELINE_JOB_ID', 'None')}")
 
 # Read store config from BigQuery or fallback to JSON file
-try:
-    # Try to import and use StoreManager
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, parent_dir)
-    from onboarding.store_manager import StoreManager
-    
-    store_manager = StoreManager()
-    stores = store_manager.get_store_configs(active_only=True)
-    print(f"[INFO] Loaded {len(stores)} active stores from BigQuery")
-except Exception as e:
-    print(f"[WARNING] Could not load from BigQuery: {e}. Falling back to JSON file.")
-    # Fallback to JSON file
-    config_path = "/secrets/store_config.json" if os.path.exists("/secrets/store_config.json") else "store_config.json"
-    with open(config_path) as f:
-        stores = json.load(f)
-    print(f"[INFO] Loaded {len(stores)} stores from {config_path}")
+# First check if we have store config passed via environment (Cloud Run Job)
+store_config_json = os.environ.get("STORE_CONFIG_JSON")
+if store_config_json:
+    try:
+        # Parse the JSON config from environment
+        store_config = json.loads(store_config_json)
+        stores = [store_config]
+        print(f"[INFO] Loaded store config from environment: {store_config.get('MERCHANT', 'unknown')}")
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Failed to parse STORE_CONFIG_JSON: {e}")
+        exit(1)
+else:
+    # Try to load from BigQuery or JSON file
+    try:
+        # Try to import and use StoreManager
+        parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, parent_dir)
+        from onboarding.store_manager import StoreManager
+        
+        store_manager = StoreManager()
+        stores = store_manager.get_store_configs(active_only=True)
+        print(f"[INFO] Loaded {len(stores)} active stores from BigQuery")
+    except Exception as e:
+        print(f"[WARNING] Could not load from BigQuery: {e}. Falling back to JSON file.")
+        # Fallback to JSON file
+        config_path = "/secrets/store_config.json" if os.path.exists("/secrets/store_config.json") else "store_config.json"
+        with open(config_path) as f:
+            stores = json.load(f)
+        print(f"[INFO] Loaded {len(stores)} stores from {config_path}")
 
 # Filter by TARGET_STORE if specified (for single store runs)
 target_store = os.environ.get("TARGET_STORE")

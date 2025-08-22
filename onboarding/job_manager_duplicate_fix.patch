@@ -1,0 +1,47 @@
+--- job_manager.py.original
++++ job_manager.py
+@@ -75,8 +75,42 @@
+         logs_table = bigquery.Table(logs_table_id, schema=logs_schema)
+         logs_table = self.client.create_table(logs_table, exists_ok=True)
+     
++    def has_active_job_for_store(self, store_url):
++        """Check if there's already an active job for a store"""
++        query = f"""
++        WITH job_timeline AS (
++            SELECT *,
++                   ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY started_at DESC) as rn
++            FROM `{self.project_id}.{self.jobs_dataset}.{self.jobs_table}`
++        ),
++        latest_status AS (
++            SELECT job_id, status, store_url
++            FROM job_timeline
++            WHERE rn = 1
++        )
++        SELECT COUNT(*) as active_count
++        FROM latest_status
++        WHERE store_url = @store_url
++          AND status IN ('pending', 'running')
++        """
++        
++        job_config = bigquery.QueryJobConfig(
++            query_parameters=[
++                bigquery.ScalarQueryParameter("store_url", "STRING", store_url),
++            ]
++        )
++        
++        try:
++            result = list(self.client.query(query, job_config=job_config))
++            return result[0].active_count > 0 if result else False
++        except Exception as e:
++            print(f"[ERROR] Failed to check active jobs: {e}")
++            return False
++    
+     def create_job(self, store_url, dataset_name, job_type="historical_load", created_by=None):
+-        """Create a new job record"""
++        """Create a new job record (with duplicate prevention)"""
++        # Check if there's already an active job for this store
++        if self.has_active_job_for_store(store_url):
++            raise Exception(f"There is already an active job running for {store_url}. Please wait for it to complete or cancel it first.")
++        
+         job_id = str(uuid.uuid4())
+         job_data = {

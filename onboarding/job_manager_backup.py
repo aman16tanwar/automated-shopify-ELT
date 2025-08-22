@@ -334,7 +334,7 @@ class JobManager:
         return list(self.client.query(query, job_config=job_config))
     
     def run_historical_load_async(self, store_config, job_id):
-        """Run historical load using Cloud Run Job"""
+        """Run historical load in background thread"""
         def _run_in_background():
             try:
                 self.update_job_status(job_id, "running")
@@ -342,39 +342,6 @@ class JobManager:
                 self.log_message(job_id, "INFO", f"Starting historical load for {merchant}", 
                                merchant, "main")
                 
-                # Check if we're in Cloud Run environment
-                if os.getenv("K_SERVICE"):
-                    # Running in Cloud Run - use Cloud Run Jobs
-                    try:
-                        from cloud_run_job_manager import CloudRunJobManager
-                        job_manager = CloudRunJobManager(project_id=self.project_id)
-                        
-                        # Create and execute Cloud Run Job
-                        result = job_manager.create_historical_job(store_config, job_id)
-                        
-                        if result['success']:
-                            self.log_message(job_id, "INFO", 
-                                           f"Created Cloud Run Job: {result['job_name']}", 
-                                           merchant, "main")
-                            self.log_message(job_id, "INFO", 
-                                           f"Job execution started: {result.get('execution_name', 'N/A')}", 
-                                           merchant, "main")
-                            
-                            # Store Cloud Run job name for status tracking
-                            self.log_message(job_id, "INFO", 
-                                           f"CLOUD_RUN_JOB_NAME:{result['job_name']}", 
-                                           merchant, "system")
-                            
-                            # Job will update its own status when complete
-                            return
-                        else:
-                            raise Exception(f"Failed to create Cloud Run Job: {result.get('error', 'Unknown error')}")
-                    except ImportError:
-                        self.log_message(job_id, "WARNING", 
-                                       "Cloud Run Job Manager not available, falling back to subprocess", 
-                                       merchant, "main")
-                
-                # Fallback to subprocess for local development
                 # Get historical script path
                 app_dir = os.path.dirname(os.path.abspath(__file__))
                 historical_script = os.path.join(os.path.dirname(app_dir), "historical", "main.py")

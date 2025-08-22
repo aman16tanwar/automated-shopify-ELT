@@ -1181,19 +1181,19 @@ with tab3:
     with col1:
         st.markdown("## 📈 Pipeline Jobs")
     with col2:
-        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh every 5 seconds")
+        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh every 10 minutes")
     with col3:
-        if st.button("🔄 Refresh Now"):
+        if st.button("🔄 Refresh Status"):
             st.rerun()
     
-    # Add auto-refresh JavaScript if enabled
+    # Add auto-refresh JavaScript if enabled (10 minutes = 600000 ms)
     if auto_refresh:
         st.markdown(
             """
             <script>
             setTimeout(function() {
                 window.location.reload();
-            }, 5000);
+            }, 600000);
             </script>
             """,
             unsafe_allow_html=True
@@ -1205,413 +1205,93 @@ with tab3:
         del st.session_state["show_pipeline_notification"]
     
     if job_manager:
-        # Get stats for summary
-        all_active_jobs = job_manager.get_active_jobs() if job_manager else []
-        recent_jobs = job_manager.get_recent_jobs(limit=50)
+        # Get recent jobs
+        recent_jobs = job_manager.get_recent_jobs(limit=20)
         
-        # Calculate statistics
-        active_count = len(all_active_jobs)
-        completed_today = sum(1 for j in recent_jobs if j.status == "completed" and 
-                            hasattr(j, 'completed_at') and j.completed_at and 
-                            j.completed_at.date() == datetime.now(timezone.utc).date())
-        failed_today = sum(1 for j in recent_jobs if j.status == "failed" and 
-                         hasattr(j, 'started_at') and j.started_at and 
-                         j.started_at.date() == datetime.now(timezone.utc).date())
-        
-        # Summary metrics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("🏃 Active Jobs", active_count, 
-                     delta=f"+{active_count}" if active_count > 0 else None,
-                     delta_color="normal")
-        with col2:
-            st.metric("✅ Completed Today", completed_today)
-        with col3:
-            st.metric("❌ Failed Today", failed_today,
-                     delta_color="inverse" if failed_today > 0 else "off")
-        with col4:
-            avg_duration = 0
-            completed_jobs = [j for j in recent_jobs if j.status == "completed" and hasattr(j, 'duration_seconds') and j.duration_seconds]
-            if completed_jobs:
-                avg_duration = sum(j.duration_seconds for j in completed_jobs) / len(completed_jobs)
-                avg_hours = int(avg_duration // 3600)
-                avg_minutes = int((avg_duration % 3600) // 60)
-                st.metric("⏱️ Avg Duration", f"{avg_hours}h {avg_minutes}m")
-            else:
-                st.metric("⏱️ Avg Duration", "N/A")
+        # Initialize Cloud Run Job Manager
+        try:
+            from cloud_run_job_manager import CloudRunJobManager
+            cr_job_manager = CloudRunJobManager(project_id=job_manager.project_id)
+        except:
+            cr_job_manager = None
+            st.warning("Cloud Run Job Manager not available. Status updates may be limited.")
         
         st.markdown("---")
-        # Clean up old cancelled jobs from session state (older than 5 minutes)
-        if 'cancelled_jobs' in st.session_state and st.session_state.cancelled_jobs:
-            current_time = datetime.now()
-            cleaned_cancelled = {}
-            for job_id, cancel_time in st.session_state.cancelled_jobs.items():
-                if isinstance(cancel_time, datetime) and (current_time - cancel_time).seconds < 300:
-                    cleaned_cancelled[job_id] = cancel_time
-            st.session_state.cancelled_jobs = cleaned_cancelled
-        # Better controls
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col1:
-            if st.button("🔄 Refresh", help="Refresh job status"):
-                st.rerun()
-        with col2:
-            # Add cleanup button for stuck jobs
-            if st.button("🧹 Clean stuck jobs", type="secondary", help="Mark jobs pending >1hr as failed"):
-                with st.spinner("Cleaning stuck jobs..."):
-                    cleaned, total = job_manager.force_clean_stuck_jobs(hours=1)
-                    if cleaned > 0:
-                        st.success(f"✅ Cleaned {cleaned} out of {total} stuck jobs")
-                        time.sleep(1)
-                        st.rerun()
-                    elif total > 0:
-                        st.warning(f"⚠️ Found {total} stuck jobs but couldn't clean them")
-                    else:
-                        st.info("No stuck jobs found")
-        with col3:
-            # Debug mode toggle
-            debug_mode = st.checkbox("🐛 Debug", value=False)
         
-        # Filter out any jobs that were cancelled in this session
-        cancelled_in_session = st.session_state.get('cancelled_jobs', {})
-        # Only filter recently cancelled (within 5 minutes)
-        active_jobs = []
-        for job in all_active_jobs or []:
-            if job.job_id in cancelled_in_session:
-                cancelled_time = cancelled_in_session[job.job_id]
-                if isinstance(cancelled_time, datetime) and (datetime.now() - cancelled_time).seconds < 300:
-                    continue  # Skip this job, it was recently cancelled
-            active_jobs.append(job)
-        
-        # Debug information
-        if debug_mode:
-            with st.expander("🐛 Debug Info", expanded=True):
-                st.write("### Active Jobs Query Results:")
-                if active_jobs:
-                    for job in active_jobs:
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.text(f"Job ID: {job.job_id[:16]}...")
-                            st.text(f"Status: {job.status}")
-                            st.text(f"Store: {job.store_url}")
-                        with col2:
-                            st.text(f"Started: {job.started_at}")
-                            st.text(f"Running: {job.running_seconds}s")
-                            if st.button(f"Check records", key=f"debug_{job.job_id}"):
-                                records = job_manager.debug_job_status(job.job_id)
-                                st.write("All records for this job:")
-                                for r in records:
-                                    st.text(f"  {r.status} at {r.started_at}")
-                        st.markdown("---")
-                else:
-                    st.info("No active jobs found")
-        
-        if active_jobs:
-            st.warning(f"🔄 {len(active_jobs)} active job(s)")
-        
-        # Show active jobs with better UI
-        st.markdown("### 🏃 Active Jobs")
-        if active_jobs:
-            # Check if we should highlight a specific job
-            highlight_job_id = st.session_state.get("highlight_job_id")
-            if highlight_job_id:
-                # Clear the highlight after showing it
-                del st.session_state["highlight_job_id"]
-            
-            # Create a more compact view
-            for idx, job in enumerate(active_jobs):
-                with st.container():
-                    # Check if this job should be highlighted
-                    is_highlighted = highlight_job_id and job.job_id == highlight_job_id
-                    bg_color = "#e8fffe" if is_highlighted else "#f8f9fa"
-                    border_style = "border: 2px solid var(--happyweb-primary);" if is_highlighted else ""
-                    
-                    # Add "NEW" badge for highlighted job
-                    new_badge = '<span style="background-color: var(--happyweb-primary); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 10px;">NEW</span>' if is_highlighted else ""
-                    
-                    # Estimate progress based on running time
-                    # Typical historical loads take 0.5-4 hours, let's use 2 hours (7200 seconds) as average
-                    estimated_duration = 7200  # 2 hours in seconds
-                    progress_percentage = min(100, int((job.running_seconds / estimated_duration) * 100))
-                    
-                    # Adjust progress based on logs if available (for better accuracy)
-                    if job.status == 'running':
-                        # Try to get recent logs to determine actual progress
-                        recent_logs = job_manager.get_job_logs(job.job_id, limit=20)
-                        if recent_logs:
-                            for log in recent_logs:
-                                if "[COMPLETED]" in log.message:
-                                    progress_percentage = 100
-                                elif "Loading data to BigQuery" in log.message or "[SUCCESS]" in log.message:
-                                    progress_percentage = max(progress_percentage, 75)
-                                elif "Fetching" in log.message or "[FETCHING]" in log.message:
-                                    progress_percentage = max(progress_percentage, 50)
-                                elif "Processing" in log.message or "[PROCESSING]" in log.message:
-                                    progress_percentage = max(progress_percentage, 25)
-                    
-                    # Use a card-like layout
-                    st.markdown(f"""
-                    <div style="background-color: {bg_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; {border_style}">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                            <div>
-                                <strong>{job.store_url}</strong>{new_badge}<br>
-                                <small style="color: #666;">Job ID: {job.job_id[:8]}... | Dataset: {job.dataset_name}</small>
-                            </div>
-                            <div style="text-align: right;">
-                                <span style="font-size: 1.2rem; font-weight: bold;">
-                                    {job.running_seconds // 3600}h {(job.running_seconds % 3600) // 60}m
-                                </span><br>
-                                <small>{'🟢 Running' if job.status == 'running' else '🟡 Pending'}</small>
-                            </div>
-                        </div>
-                        <div style="margin-top: 0.5rem;">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div style="flex: 1; background-color: #e0e0e0; border-radius: 4px; height: 8px; overflow: hidden;">
-                                    <div style="background-color: var(--happyweb-primary); height: 100%; width: {progress_percentage}%; transition: width 0.3s ease;"></div>
-                                </div>
-                                <span style="font-size: 0.85rem; color: #666; min-width: 45px; text-align: right;">{progress_percentage}%</span>
-                            </div>
-                            <small style="color: #888; font-size: 0.75rem;">
-                                {f"Estimated: ~{max(0, (estimated_duration - job.running_seconds) // 60)} minutes remaining" if progress_percentage < 100 else "Finalizing..."}
-                            </small>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Auto-expand logs for highlighted job
-                    if is_highlighted:
-                        st.session_state[f"show_logs_{job.job_id}"] = True
-                    
-                    # Action buttons
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    with col2:
-                        # Use a more stable key that persists across reruns
-                        logs_key = f"show_logs_{job.job_id}"
-                        button_text = "Hide Logs" if st.session_state.get(logs_key, False) else "View Logs"
-                        if st.button(button_text, key=f"btn_logs_{job.job_id}", type="secondary"):
-                            if logs_key not in st.session_state:
-                                st.session_state[logs_key] = False
-                            st.session_state[logs_key] = not st.session_state[logs_key]
-                    with col3:
-                        if st.button("Cancel ❌", key=f"cancel_{job.job_id}", type="primary"):
-                            cancel_container = st.container()
-                            with cancel_container:
-                                with st.spinner("Cancelling job..."):
-                                    try:
-                                        # Cancel the job
-                                        success = job_manager.cancel_job(job.job_id)
-                                        
-                                        if success:
-                                            # Add to cancelled jobs in session state with timestamp
-                                            if 'cancelled_jobs' not in st.session_state:
-                                                st.session_state.cancelled_jobs = {}
-                                            st.session_state.cancelled_jobs[job.job_id] = datetime.now()
-                                            
-                                            # Also clear any logs state for this job
-                                            logs_key = f"show_logs_{job.job_id}"
-                                            if logs_key in st.session_state:
-                                                del st.session_state[logs_key]
-                                            
-                                            time.sleep(2)
-                                            
-                                            # Verify cancellation if in debug mode
-                                            if debug_mode:
-                                                st.write("Debug: Checking job status after cancel...")
-                                                records = job_manager.debug_job_status(job.job_id)
-                                                for r in records[:3]:
-                                                    st.text(f"Status: {r.status}, Time: {r.started_at}")
-                                            
-                                            st.success(f"✅ Job {job.job_id[:8]}... cancelled")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Failed to cancel job")
-                                    except Exception as e:
-                                        st.error(f"Error: {str(e)}")
-                                        if debug_mode:
-                                            import traceback
-                                            st.code(traceback.format_exc())
-                    
-                    # Show logs if requested
-                    if st.session_state.get(f"show_logs_{job.job_id}", False):
-                        with st.container():
-                            st.markdown("##### 📋 Real-time Logs")
-                            logs = job_manager.get_job_logs(job.job_id, limit=500)  # Get more logs
-                            if logs:
-                                # Create a scrollable log container
-                                log_html = '<div style="background-color: #1e1e1e; color: #ffffff; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.85rem; height: 300px; overflow-y: scroll; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;">'
-                                
-                                # Show more logs and track errors
-                                error_count = 0
-                                warning_count = 0
-                                for log in reversed(logs):  # Show all logs, container handles scrolling
-                                    # Check for errors in message content
-                                    is_error = any(term in log.message.upper() for term in ['ERROR', 'FAILED', 'EXCEPTION'])
-                                    is_warning = any(term in log.message.upper() for term in ['WARNING', 'WARN'])
-                                    
-                                    if is_error:
-                                        error_count += 1
-                                    elif is_warning:
-                                        warning_count += 1
-                                    
-                                    level_color = {
-                                        "ERROR": "#ff6b6b",
-                                        "WARNING": "#ffd93d",
-                                        "INFO": "#6bcf7f",
-                                        "SUCCESS": "#4caf50"
-                                    }.get(log.log_level, "#ffffff")
-                                    
-                                    if hasattr(log, 'timestamp') and log.timestamp:
-                                        timestamp = log.timestamp.strftime('%H:%M:%S')
-                                    else:
-                                        timestamp = "N/A"
-                                    
-                                    # Format the log line with background highlight for errors
-                                    bg_style = ""
-                                    if is_error or log.log_level == "ERROR":
-                                        bg_style = "background-color: rgba(255, 107, 107, 0.1); padding: 2px 4px; border-radius: 3px;"
-                                    elif is_warning or log.log_level == "WARNING":
-                                        bg_style = "background-color: rgba(255, 217, 61, 0.1); padding: 2px 4px; border-radius: 3px;"
-                                    
-                                    log_html += f'<div style="margin-bottom: 0.25rem; {bg_style}"><span style="color: #888;">[{timestamp}]</span> <span style="color: {level_color};">[{log.log_level}]</span> {html.escape(log.message)}</div>'
-                                
-                                log_html += '</div>'
-                                st.markdown(log_html, unsafe_allow_html=True)
-                                
-                                # Show error/warning summary
-                                if error_count > 0 or warning_count > 0:
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        if error_count > 0:
-                                            st.error(f"⚠️ {error_count} errors detected")
-                                    with col2:
-                                        if warning_count > 0:
-                                            st.warning(f"⚠️ {warning_count} warnings detected")
-                                
-                                # Add refresh button for logs
-                                if st.button("🔄 Refresh Logs", key=f"refresh_logs_{job.job_id}"):
-                                    st.rerun()
-                            else:
-                                st.info("No logs available yet...")
-                    
-                    st.markdown("---")
-        else:
-            st.info("🟢 No active jobs running. Historical loads will appear here when started.")
-        
-        # Show recent completed jobs with better filtering
-        st.markdown("### 📁 Recent Jobs")
-        
-        # Add filter options
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            status_filter = st.multiselect(
-                "Filter by status:",
-                ["completed", "failed", "cancelled", "pending"],
-                default=["completed", "failed"]
-            )
-        with col2:
-            show_limit = st.selectbox("Show:", [10, 25, 50], index=0)
-        
-        recent_jobs = job_manager.get_recent_jobs(limit=show_limit)
-        
+        # Simple pipeline status table
         if recent_jobs:
-            # Filter jobs based on selection
-            filtered_jobs = [j for j in recent_jobs if j.status in status_filter]
+            # Create a simple table data
+            table_data = []
             
-            if filtered_jobs:
-                table_data = []
-                for job in filtered_jobs:
-                    status_icon = {
-                        "completed": "✅",
-                        "failed": "❌",
-                        "running": "🟢",
-                        "pending": "🟡",
-                        "cancelled": "🚫"
-                    }.get(job.status, "❓")
-                    
-                    duration = ""
-                    performance_indicator = ""
-                    if hasattr(job, 'duration_seconds') and job.duration_seconds:
-                        hours = job.duration_seconds // 3600
-                        minutes = (job.duration_seconds % 3600) // 60
-                        duration = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-                        
-                        # Add performance indicator based on duration
-                        if job.status == "completed":
-                            if job.duration_seconds < 1800:  # Less than 30 minutes
-                                performance_indicator = " ⚡"  # Very fast
-                            elif job.duration_seconds < 7200:  # Less than 2 hours
-                                performance_indicator = " 🚀"  # Fast
-                            elif job.duration_seconds < 14400:  # Less than 4 hours
-                                performance_indicator = ""  # Normal
-                            else:
-                                performance_indicator = " 🐌"  # Slow
-                    
-                    # Check if job is stuck
-                    is_stuck = False
-                    if job.status == 'pending' and hasattr(job, 'started_at') and job.started_at:
-                        age_hours = (datetime.now(timezone.utc) - job.started_at).total_seconds() / 3600
-                        if age_hours > 1:
-                            is_stuck = True
-                            duration = f"⚠️ {int(age_hours)}h stuck"
-                    
-                    table_data.append({
-                        "Status": f"{status_icon} {job.status.title()}",
-                        "Store": job.store_url,
-                        "Dataset": job.dataset_name,
-                        "Started": job.started_at.strftime("%Y-%m-%d %H:%M") if hasattr(job, 'started_at') and job.started_at else "N/A",
-                        "Duration": duration + performance_indicator,
-                        "Errors": job.error_count if hasattr(job, 'error_count') else 0,
-                        "_job_id": job.job_id,
-                        "_is_stuck": is_stuck
-                    })
-            
-                df = pd.DataFrame(table_data)
+            for job in recent_jobs[:10]:  # Show only last 10 jobs
+                # Map job status to simple status
+                status_icon = {
+                    "completed": "✅",
+                    "failed": "❌",
+                    "running": "🟢",
+                    "pending": "🟡",
+                    "cancelled": "🚫"
+                }.get(job.status, "❓")
                 
-                # Display table
-                st.dataframe(
-                    df[["Status", "Store", "Dataset", "Started", "Duration", "Errors"]],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Status": st.column_config.TextColumn("Status", width="small"),
-                        "Store": st.column_config.TextColumn("Store", width="medium"),
-                        "Dataset": st.column_config.TextColumn("Dataset", width="medium"),
-                        "Started": st.column_config.TextColumn("Started At", width="medium"),
-                        "Duration": st.column_config.TextColumn("Duration", width="small"),
-                        "Errors": st.column_config.NumberColumn("Errors", width="small"),
-                    }
-                )
-                # Job details viewer
-                if table_data:
-                    st.markdown("---")
-                    st.markdown("### 🔍 View Job Details")
-                    job_options = [(f"{row['Store']} - {row['Started']}", row["_job_id"]) for row in table_data]
-                    if job_options:
-                        selected_label, selected_job_id = st.selectbox(
-                            "Select a job to view detailed logs:",
-                            options=job_options,
-                            format_func=lambda x: x[0]
-                        )
-                        with st.expander("View Detailed Logs", expanded=True):
-                            logs = job_manager.get_job_logs(selected_job_id, limit=100)
-                            if logs:
-                                log_text = []
-                                for log in reversed(logs):
-                                    level_icon = {
-                                        "ERROR": "❌",
-                                        "WARNING": "⚠️",
-                                        "INFO": "ℹ️"
-                                    }.get(log.log_level, "📝")
-                                    component = f"[{log.component}]" if log.component else ""
-                                    timestamp = log.timestamp.strftime("%H:%M:%S") if hasattr(log, 'timestamp') and log.timestamp else "N/A"
-                                    log_text.append(f"{level_icon} [{timestamp}] {component} {log.message}")
-                                st.text("\n".join(log_text))
-                            else:
-                                st.info("No logs available for this job.")
-            else:
-                st.info(f"No jobs found with status: {', '.join(status_filter)}")
+                # Try to get Cloud Run Job status if available
+                cloud_run_status = "N/A"
+                cloud_run_job_name = None
+                
+                if cr_job_manager:
+                    # Try to find Cloud Run job name from logs
+                    logs = job_manager.get_job_logs(job.job_id, limit=50)
+                    for log in logs:
+                        if "CLOUD_RUN_JOB_NAME:" in log.message:
+                            cloud_run_job_name = log.message.split("CLOUD_RUN_JOB_NAME:")[1].strip()
+                            break
+                    
+                    # If not found in logs, try to generate it from store URL
+                    if not cloud_run_job_name and hasattr(job, 'store_url'):
+                        cloud_run_job_name = cr_job_manager.sanitize_job_name(job.store_url)
+                    
+                    # Get status if we have a job name
+                    if cloud_run_job_name:
+                        try:
+                            cloud_run_status = cr_job_manager.get_job_status(cloud_run_job_name)
+                        except:
+                            pass
+                
+                # Simple status display
+                if job.status == "running" or job.status == "pending":
+                    display_status = f"{status_icon} Running"
+                elif job.status == "completed":
+                    display_status = f"{status_icon} Completed"
+                elif job.status == "failed":
+                    display_status = f"{status_icon} Failed"
+                else:
+                    display_status = f"{status_icon} {job.status.title()}"
+                
+                table_data.append({
+                    "Pipeline Name": job.store_url,
+                    "Status": display_status,
+                    "Cloud Run Status": cloud_run_status if cloud_run_status != "N/A" else "-",
+                    "Started": job.started_at.strftime("%Y-%m-%d %H:%M") if hasattr(job, 'started_at') and job.started_at else "N/A"
+                })
+            
+            # Display simple table
+            st.markdown("### Pipeline Status")
+            df = pd.DataFrame(table_data)
+            st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Pipeline Name": st.column_config.TextColumn("Pipeline Name", width="large"),
+                    "Status": st.column_config.TextColumn("Status", width="medium"),
+                    "Cloud Run Status": st.column_config.TextColumn("Cloud Run Status", width="medium"),
+                    "Started": st.column_config.TextColumn("Started", width="medium")
+                }
+            )
+            
+            st.info("💡 For detailed logs and error messages, please check the Cloud Run console in Google Cloud Platform.")
         else:
-            st.info("No jobs found. Start a historical load to see job history.")
+            st.info("No pipeline jobs found. Start a historical load to see job status here.")
+        
     else:
         st.error("Job Manager not available. Pipeline jobs cannot be monitored.")
 

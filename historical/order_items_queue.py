@@ -256,7 +256,7 @@ def run_order_items_insights(config):
     # Convert all monetary values to float for BigQuery FLOAT type
     monetary_columns = ["line_item_tax_price", "refund_subtotal", "line_item_discount", 
                        "shipping_line_discounted_price", "total_discounts", "total_price",
-                       "line_item_price", "line_item_discount_amount", "line_item_pre_tax_price"]
+                       "line_item_price", "line_item_pre_tax_price"]
     for col in monetary_columns:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype('float64')
