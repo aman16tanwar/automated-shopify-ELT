@@ -74,7 +74,7 @@ class CloudRunJobManager:
             "template": {
                 "template": {
                     "containers": [{
-                        "image": f"gcr.io/{self.project_id}/shopify-pipeline:latest",
+                        "image": f"us-central1-docker.pkg.dev/{self.project_id}/cloud-run-source-deploy/shopify-pipeline:latest",
                         "resources": {
                             "limits": {
                                 "cpu": "2",

@@ -10,6 +10,17 @@ steps:
     id: 'push-image'
     waitFor: ['build-image']
 
+  # Step 2.5: Tag and push as latest
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['tag', 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shopify-pipeline:$COMMIT_SHA', 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shopify-pipeline:latest']
+    id: 'tag-latest'
+    waitFor: ['push-image']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shopify-pipeline:latest']
+    id: 'push-latest'
+    waitFor: ['tag-latest']
+
   # Step 3: Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -41,7 +52,7 @@ steps:
       - '--set-env-vars'
       - 'GCP_PROJECT_ID=$PROJECT_ID,ENVIRONMENT=production'
     id: 'deploy-service'
-    waitFor: ['push-image']
+    waitFor: ['push-latest']
 
   # Step 4: Grant you access to the private service
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -62,6 +73,7 @@ steps:
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shopify-pipeline:$COMMIT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shopify-pipeline:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -1273,8 +1273,54 @@ with tab3:
                     "Started": job.started_at.strftime("%Y-%m-%d %H:%M") if hasattr(job, 'started_at') and job.started_at else "N/A"
                 })
             
-            # Display simple table
+            # Display simple table with controls
             st.markdown("### Pipeline Status")
+            
+            # Add controls above the table
+            col1, col2, col3 = st.columns([1, 1, 3])
+            with col1:
+                if st.button("🔄 Refresh Table"):
+                    st.rerun()
+            with col2:
+                if st.button("🗑️ Clear History", type="secondary"):
+                    # Clear completed and failed jobs from the table
+                    if st.session_state.get("confirm_clear", False):
+                        # User confirmed, clear the data
+                        try:
+                            # Delete all completed/failed/cancelled jobs from BigQuery
+                            delete_query = f"""
+                            DELETE FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.jobs_table}`
+                            WHERE status IN ('completed', 'failed', 'cancelled')
+                            AND job_type != 'status_update'
+                            """
+                            job_manager.client.query(delete_query).result()
+                            
+                            # Also delete associated logs
+                            delete_logs_query = f"""
+                            DELETE FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.logs_table}`
+                            WHERE job_id IN (
+                                SELECT DISTINCT job_id 
+                                FROM `{job_manager.project_id}.{job_manager.jobs_dataset}.{job_manager.jobs_table}`
+                                WHERE status IN ('completed', 'failed', 'cancelled')
+                            )
+                            """
+                            job_manager.client.query(delete_logs_query).result()
+                            
+                            st.success("✅ History cleared successfully!")
+                            st.session_state["confirm_clear"] = False
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error clearing history: {e}")
+                            st.session_state["confirm_clear"] = False
+                    else:
+                        st.session_state["confirm_clear"] = True
+                        st.warning("⚠️ Click again to confirm clearing all completed/failed jobs")
+            
+            # Reset confirmation if user clicks elsewhere
+            if "confirm_clear" in st.session_state and not st.session_state.get("just_clicked_clear", False):
+                st.session_state["confirm_clear"] = False
+            
             df = pd.DataFrame(table_data)
             st.dataframe(
                 df,
