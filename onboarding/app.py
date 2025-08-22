@@ -701,10 +701,8 @@ with tab1:
                             # Start async processing
                             job_manager.run_historical_load_async(store_config, job_id)
                             
-                            # Update last_updated
-                            store_config["last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
-                            cfgs = upsert_config(cfgs, store_config, key="MERCHANT")
-                            save_configs(cfgs, cfg_path)
+                            # Don't need to update configs again - job is already created
+                            # The config was either loaded from session or from BigQuery
                             
                             # Set flags for navigation
                             st.session_state.show_historical = False

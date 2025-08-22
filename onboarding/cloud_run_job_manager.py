@@ -207,10 +207,39 @@ class CloudRunJobManager:
                 "PENDING": "Pending"
             }
             
-            # Get the state name from the enum
-            state_name = latest_execution.state.name if hasattr(latest_execution.state, 'name') else str(latest_execution.state)
-            
-            return state_mapping.get(state_name, state_name)
+            # Get the state - it might be a string or an enum
+            try:
+                # Try different ways to get the state
+                if hasattr(latest_execution, 'state'):
+                    state = latest_execution.state
+                    # If it's an enum, get the name
+                    if hasattr(state, 'name'):
+                        state_name = state.name
+                    else:
+                        # It might already be a string
+                        state_name = str(state)
+                else:
+                    # Fallback - check other possible fields
+                    print(f"[DEBUG] Execution object fields: {dir(latest_execution)}")
+                    state_name = "Unknown"
+                
+                # Handle numeric state values (enum values)
+                if isinstance(state_name, str) and state_name.isdigit():
+                    # Map numeric values to state names
+                    state_num_mapping = {
+                        "1": "PENDING",
+                        "2": "ACTIVE", 
+                        "3": "SUCCEEDED",
+                        "4": "FAILED",
+                        "5": "CANCELLED"
+                    }
+                    state_name = state_num_mapping.get(state_name, "Unknown")
+                
+                return state_mapping.get(state_name, state_name)
+            except Exception as e:
+                print(f"[DEBUG] Error parsing execution state: {e}")
+                print(f"[DEBUG] Execution type: {type(latest_execution)}")
+                return "Unknown"
             
         except Exception as e:
             print(f"Error getting job status: {e}")
