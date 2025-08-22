@@ -119,6 +119,11 @@ class StoreManager:
             exists = False
         
         if exists:
+            # Skip update if store already exists to avoid streaming buffer issues
+            print(f"[StoreManager] Store {merchant} already exists - skipping update to avoid streaming buffer issues", flush=True)
+            return
+            
+            # OLD CODE BELOW - Keeping for reference but not executing
             # Update existing using MERGE to handle streaming buffer
             merge_query = f"""
             MERGE `{self.project_id}.{self.dataset}.{self.table}` AS target
