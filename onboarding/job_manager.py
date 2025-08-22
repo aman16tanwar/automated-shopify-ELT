@@ -369,9 +369,17 @@ class JobManager:
                             return
                         else:
                             raise Exception(f"Failed to create Cloud Run Job: {result.get('error', 'Unknown error')}")
-                    except ImportError:
+                    except ImportError as e:
+                        import traceback
+                        error_details = traceback.format_exc()
+                        self.log_message(job_id, "ERROR", 
+                                       f"Cloud Run Job Manager import failed: {str(e)}", 
+                                       merchant, "main")
+                        self.log_message(job_id, "ERROR", 
+                                       f"Import error details: {error_details[:500]}", 
+                                       merchant, "main")
                         self.log_message(job_id, "WARNING", 
-                                       "Cloud Run Job Manager not available, falling back to subprocess", 
+                                       "Falling back to subprocess method", 
                                        merchant, "main")
                 
                 # Fallback to subprocess for local development

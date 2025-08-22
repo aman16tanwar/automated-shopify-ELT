@@ -70,7 +70,7 @@ class CloudRunJobManager:
         
         # Job configuration
         job = {
-            "name": full_job_name,
+            # Don't include name in the job body for creation
             "template": {
                 "template": {
                     "containers": [{
